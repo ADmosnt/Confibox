@@ -8,7 +8,6 @@ def make_token(user):
     payload = {
         'sub': user.id,
         'rol': user.rol,
-        'cliente_id': user.cliente_id,
         'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
     }
     return jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
