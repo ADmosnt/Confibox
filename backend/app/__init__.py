@@ -49,6 +49,9 @@ def create_app():
     from app.routes.inventario import bp as inventario_bp
     from app.routes.auth import bp as auth_bp
     from app.routes.usuarios import bp as usuarios_bp
+    from app.routes.pedidos import bp as pedidos_bp
+    from app.routes.entregas import bp as entregas_bp
+    from app.routes.solicitudes import bp as solicitudes_bp
 
     app.register_blueprint(config_bp, url_prefix='/api/config')
     app.register_blueprint(maestras_bp, url_prefix='/api')
@@ -58,6 +61,9 @@ def create_app():
     app.register_blueprint(inventario_bp, url_prefix='/api/inventario')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(usuarios_bp, url_prefix='/api/usuarios')
+    app.register_blueprint(pedidos_bp, url_prefix='/api/pedidos')
+    app.register_blueprint(entregas_bp, url_prefix='/api/entregas')
+    app.register_blueprint(solicitudes_bp, url_prefix='/api/solicitudes-georef')
 
     _ready = {'done': False}
 
