@@ -1,23 +1,18 @@
 from flask import Blueprint, jsonify, request
 from app import db
-from app.models import Usuario, Cliente
+from app.models import Usuario
 from app.auth import require_role
 
 bp = Blueprint('usuarios', __name__)
+
+ROLES_VALIDOS = ('admin', 'vendedor', 'facturacion', 'almacenista', 'chofer')
 
 
 @bp.route('', methods=['GET'])
 @require_role('admin')
 def list_usuarios():
     usuarios = Usuario.query.order_by(Usuario.username).all()
-    result = []
-    for u in usuarios:
-        d = u.to_dict()
-        if u.cliente_id:
-            c = Cliente.query.get(u.cliente_id)
-            d['cliente_nombre'] = c.razon_social if c else None
-        result.append(d)
-    return jsonify(result)
+    return jsonify([u.to_dict() for u in usuarios])
 
 
 @bp.route('', methods=['POST'])
@@ -28,16 +23,10 @@ def create_usuario():
         return jsonify({'error': 'username y password son requeridos'}), 400
     if Usuario.query.filter_by(username=data['username']).first():
         return jsonify({'error': 'El nombre de usuario ya existe'}), 400
-    rol = data.get('rol', 'cliente')
-    if rol not in ('admin', 'cliente'):
-        return jsonify({'error': 'rol debe ser admin o cliente'}), 400
-    if rol == 'cliente' and not data.get('cliente_id'):
-        return jsonify({'error': 'cliente_id es requerido para rol cliente'}), 400
-    u = Usuario(
-        username=data['username'],
-        rol=rol,
-        cliente_id=data.get('cliente_id'),
-    )
+    rol = data.get('rol', 'chofer')
+    if rol not in ROLES_VALIDOS:
+        return jsonify({'error': f"rol debe ser uno de: {', '.join(ROLES_VALIDOS)}"}), 400
+    u = Usuario(username=data['username'], rol=rol)
     u.set_password(data['password'])
     db.session.add(u)
     db.session.commit()
@@ -53,8 +42,10 @@ def update_usuario(id):
         u.set_password(data['password'])
     if 'activo' in data:
         u.activo = bool(data['activo'])
-    if 'cliente_id' in data:
-        u.cliente_id = data['cliente_id'] or None
+    if 'rol' in data:
+        if data['rol'] not in ROLES_VALIDOS:
+            return jsonify({'error': f"rol debe ser uno de: {', '.join(ROLES_VALIDOS)}"}), 400
+        u.rol = data['rol']
     db.session.commit()
     return jsonify(u.to_dict())
 

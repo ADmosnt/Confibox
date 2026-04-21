@@ -7,8 +7,8 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
+    # admin | vendedor | facturacion | almacenista | chofer
     rol = db.Column(db.String(20), nullable=False, default='admin')
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=True)
     activo = db.Column(db.Boolean, default=True)
 
     def set_password(self, pw):
@@ -24,7 +24,6 @@ class Usuario(db.Model):
             'id': self.id,
             'username': self.username,
             'rol': self.rol,
-            'cliente_id': self.cliente_id,
             'activo': self.activo,
         }
 
@@ -51,18 +50,10 @@ class Zona(db.Model):
     __tablename__ = 'zonas'
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False, unique=True)
+    color = db.Column(db.String(20))
 
     def to_dict(self):
-        return {'id': self.id, 'nombre': self.nombre}
-
-
-class GrupoCliente(db.Model):
-    __tablename__ = 'grupos_clientes'
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), nullable=False, unique=True)
-
-    def to_dict(self):
-        return {'id': self.id, 'nombre': self.nombre}
+        return {'id': self.id, 'nombre': self.nombre, 'color': self.color}
 
 
 class GrupoProducto(db.Model):
@@ -72,71 +63,6 @@ class GrupoProducto(db.Model):
 
     def to_dict(self):
         return {'id': self.id, 'nombre': self.nombre}
-
-
-class ListaPrecio(db.Model):
-    __tablename__ = 'listas_precios'
-    id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), nullable=False, unique=True)
-
-    def to_dict(self):
-        return {'id': self.id, 'nombre': self.nombre}
-
-
-clientes_lista_precios = db.Table(
-    'clientes_lista_precios',
-    db.Column('cliente_id', db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), primary_key=True),
-    db.Column('lista_id', db.Integer, db.ForeignKey('listas_precios.id', ondelete='CASCADE'), primary_key=True),
-)
-
-
-class Cliente(db.Model):
-    __tablename__ = 'clientes'
-    id = db.Column(db.Integer, primary_key=True)
-    codigo = db.Column(db.String(20), nullable=False, unique=True)
-    razon_social = db.Column(db.String(200), nullable=False)
-    rif = db.Column(db.String(20))
-    direccion = db.Column(db.Text)
-    zona_id = db.Column(db.Integer, db.ForeignKey('zonas.id'))
-    grupo_id = db.Column(db.Integer, db.ForeignKey('grupos_clientes.id'))
-    contacto = db.Column(db.String(100))
-    cobrador = db.Column(db.String(100))
-    vendedor = db.Column(db.String(100))
-    observaciones = db.Column(db.Text)
-    activo = db.Column(db.Boolean, default=True)
-
-    zona = db.relationship('Zona', backref='clientes')
-    grupo = db.relationship('GrupoCliente', backref='clientes')
-    telefonos = db.relationship('ClienteTelefono', backref='cliente', cascade='all, delete-orphan')
-    listas_precios = db.relationship('ListaPrecio', secondary=clientes_lista_precios, backref='clientes')
-
-    def to_dict(self, include_relations=False):
-        d = {
-            'id': self.id,
-            'codigo': self.codigo,
-            'razon_social': self.razon_social,
-            'rif': self.rif,
-            'direccion': self.direccion,
-            'zona_id': self.zona_id,
-            'zona': self.zona.nombre if self.zona else None,
-            'grupo_id': self.grupo_id,
-            'grupo': self.grupo.nombre if self.grupo else None,
-            'contacto': self.contacto,
-            'cobrador': self.cobrador,
-            'vendedor': self.vendedor,
-            'observaciones': self.observaciones,
-            'activo': self.activo,
-            'telefonos': [t.numero for t in self.telefonos],
-            'listas_precios': [lp.id for lp in self.listas_precios],
-        }
-        return d
-
-
-class ClienteTelefono(db.Model):
-    __tablename__ = 'clientes_telefonos'
-    id = db.Column(db.Integer, primary_key=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id', ondelete='CASCADE'), nullable=False)
-    numero = db.Column(db.String(30), nullable=False)
 
 
 class Producto(db.Model):
@@ -149,7 +75,6 @@ class Producto(db.Model):
     activo = db.Column(db.Boolean, default=True)
 
     grupo = db.relationship('GrupoProducto', backref='productos')
-    precios = db.relationship('ProductoPrecio', backref='producto', cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
@@ -160,310 +85,256 @@ class Producto(db.Model):
             'grupo_id': self.grupo_id,
             'grupo': self.grupo.nombre if self.grupo else None,
             'activo': self.activo,
-            'precios': [p.to_dict() for p in self.precios],
         }
 
 
-class ProductoPrecio(db.Model):
-    __tablename__ = 'productos_precios'
+class Cliente(db.Model):
+    # Semantically a "tienda" (store/delivery point) but keeping table name
+    # to avoid breaking FK references everywhere.
+    __tablename__ = 'clientes'
     id = db.Column(db.Integer, primary_key=True)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
-    lista_id = db.Column(db.Integer, db.ForeignKey('listas_precios.id', ondelete='CASCADE'), nullable=False)
-    precio_usd = db.Column(db.Numeric(15, 6), nullable=False)
+    codigo = db.Column(db.String(20), nullable=False, unique=True)
+    razon_social = db.Column(db.String(200), nullable=False)
+    rif = db.Column(db.String(20))
+    direccion = db.Column(db.Text)
+    zona_id = db.Column(db.Integer, db.ForeignKey('zonas.id'))
+    vendedor_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
+    # confibox | actual | ambos
+    empresa = db.Column(db.String(20), default='confibox')
+    telefono = db.Column(db.String(30))
+    latitud = db.Column(db.Numeric(10, 8))
+    longitud = db.Column(db.Numeric(11, 8))
+    foto_url = db.Column(db.String(500))
+    observaciones = db.Column(db.Text)
+    activo = db.Column(db.Boolean, default=True)
 
-    lista = db.relationship('ListaPrecio')
-    __table_args__ = (db.UniqueConstraint('producto_id', 'lista_id'),)
+    zona = db.relationship('Zona', backref='clientes')
+    vendedor = db.relationship('Usuario', foreign_keys=[vendedor_id])
 
     def to_dict(self):
         return {
             'id': self.id,
-            'lista_id': self.lista_id,
-            'lista': self.lista.nombre if self.lista else None,
-            'precio_usd': float(self.precio_usd),
+            'codigo': self.codigo,
+            'razon_social': self.razon_social,
+            'rif': self.rif,
+            'direccion': self.direccion,
+            'zona_id': self.zona_id,
+            'zona': self.zona.nombre if self.zona else None,
+            'zona_color': self.zona.color if self.zona else None,
+            'vendedor_id': self.vendedor_id,
+            'vendedor': self.vendedor.username if self.vendedor else None,
+            'empresa': self.empresa,
+            'telefono': self.telefono,
+            'latitud': float(self.latitud) if self.latitud is not None else None,
+            'longitud': float(self.longitud) if self.longitud is not None else None,
+            'foto_url': self.foto_url,
+            'observaciones': self.observaciones,
+            'activo': self.activo,
         }
 
 
-class TasaBCV(db.Model):
-    __tablename__ = 'tasas_bcv'
+class Lote(db.Model):
+    __tablename__ = 'lotes'
     id = db.Column(db.Integer, primary_key=True)
-    fecha = db.Column(db.Date, nullable=False, unique=True)
-    valor = db.Column(db.Numeric(15, 4), nullable=False)
-    fuente = db.Column(db.String(20), default='manual')
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'fecha': self.fecha.isoformat(),
-            'valor': float(self.valor),
-            'fuente': self.fuente,
-        }
-
-
-class OrdenDespacho(db.Model):
-    __tablename__ = 'ordenes_despacho'
-    id = db.Column(db.Integer, primary_key=True)
-    numero_orden = db.Column(db.String(20), nullable=False, unique=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
-    fecha_emision = db.Column(db.Date, nullable=False, default=datetime.date.today)
-    tasa_bcv_id = db.Column(db.Integer, db.ForeignKey('tasas_bcv.id'), nullable=False)
-    total_usd = db.Column(db.Numeric(15, 2), nullable=False, default=0)
-    total_bs = db.Column(db.Numeric(15, 2), nullable=False, default=0)
+    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
+    numero_lote = db.Column(db.String(50))
+    cantidad_bultos = db.Column(db.Integer, nullable=False, default=0)
+    fecha_vencimiento = db.Column(db.Date)
+    ubicacion_almacen = db.Column(db.String(100))
+    fecha_ingreso = db.Column(db.Date, nullable=False, default=datetime.date.today)
     nota = db.Column(db.Text)
-    status = db.Column(db.String(20), default='activa')
     creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
 
-    cliente = db.relationship('Cliente', backref='ordenes')
-    tasa = db.relationship('TasaBCV')
-    detalles = db.relationship('OrdenDespachoDetalle', backref='orden', cascade='all, delete-orphan')
-
-    def to_dict(self, include_detalles=False):
-        d = {
-            'id': self.id,
-            'numero_orden': self.numero_orden,
-            'cliente_id': self.cliente_id,
-            'cliente': self.cliente.razon_social if self.cliente else None,
-            'cliente_codigo': self.cliente.codigo if self.cliente else None,
-            'cliente_rif': self.cliente.rif if self.cliente else None,
-            'cliente_direccion': self.cliente.direccion if self.cliente else None,
-            'cliente_telefonos': [t.numero for t in self.cliente.telefonos] if self.cliente else [],
-            'fecha_emision': self.fecha_emision.isoformat(),
-            'tasa_bcv_id': self.tasa_bcv_id,
-            'tasa_valor': float(self.tasa.valor) if self.tasa else None,
-            'total_usd': float(self.total_usd),
-            'total_bs': float(self.total_bs),
-            'nota': self.nota,
-            'status': self.status,
-            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
-        }
-        if include_detalles:
-            d['detalles'] = [det.to_dict() for det in self.detalles]
-            active_rep = next(
-                (r for r in self.reportes if r.status in ('pendiente', 'confirmado')),
-                None
-            ) if hasattr(self, 'reportes') else None
-            d['reporte_id'] = active_rep.id if active_rep else None
-            devs = Devolucion.query.filter_by(orden_origen_id=self.id).all()
-            d['devoluciones'] = [
-                {
-                    'id': dev.id,
-                    'fecha': dev.fecha.isoformat(),
-                    'nota': dev.nota,
-                    'detalles': [det.to_dict() for det in dev.detalles],
-                }
-                for dev in devs
-            ]
-        return d
-
-
-class OrdenDespachoDetalle(db.Model):
-    __tablename__ = 'ordenes_despacho_detalle'
-    id = db.Column(db.Integer, primary_key=True)
-    orden_id = db.Column(db.Integer, db.ForeignKey('ordenes_despacho.id', ondelete='CASCADE'), nullable=False)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
-    cantidad_unidades = db.Column(db.Integer, nullable=False)
-    precio_usd_momento = db.Column(db.Numeric(15, 2), nullable=False)
-
-    producto = db.relationship('Producto')
+    producto = db.relationship('Producto', backref='lotes')
 
     def to_dict(self):
         p = self.producto
+        upb = p.unidades_por_bulto if p else 1
         return {
             'id': self.id,
             'producto_id': self.producto_id,
             'codigo': p.codigo if p else None,
             'descripcion': p.descripcion if p else None,
-            'unidades_por_bulto': p.unidades_por_bulto if p else 1,
-            'cantidad_unidades': self.cantidad_unidades,
-            'precio_usd_momento': float(self.precio_usd_momento),
-            'total_usd': float(self.cantidad_unidades * self.precio_usd_momento),
+            'unidades_por_bulto': upb,
+            'numero_lote': self.numero_lote,
+            'cantidad_bultos': self.cantidad_bultos,
+            'cantidad_unidades': self.cantidad_bultos * upb,
+            'fecha_vencimiento': self.fecha_vencimiento.isoformat() if self.fecha_vencimiento else None,
+            'ubicacion_almacen': self.ubicacion_almacen,
+            'fecha_ingreso': self.fecha_ingreso.isoformat(),
+            'nota': self.nota,
         }
 
 
-class StockConsignacion(db.Model):
-    __tablename__ = 'stock_consignacion'
+class Pedido(db.Model):
+    __tablename__ = 'pedidos'
     id = db.Column(db.Integer, primary_key=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    numero_pedido = db.Column(db.String(20), nullable=False, unique=True)
+    tienda_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    vendedor_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    # pendiente | facturado | en_ruta | entregado | con_incidencia | anulado
+    estado = db.Column(db.String(20), default='pendiente')
+    facturado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
+    facturado_en = db.Column(db.DateTime(timezone=True))
+    nota = db.Column(db.Text)
+    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+
+    tienda = db.relationship('Cliente', backref='pedidos', foreign_keys=[tienda_id])
+    vendedor = db.relationship('Usuario', foreign_keys=[vendedor_id])
+    facturador = db.relationship('Usuario', foreign_keys=[facturado_por])
+    detalles = db.relationship('PedidoDetalle', backref='pedido', cascade='all, delete-orphan')
+
+    def to_dict(self, include_detalles=False):
+        d = {
+            'id': self.id,
+            'numero_pedido': self.numero_pedido,
+            'tienda_id': self.tienda_id,
+            'tienda': self.tienda.razon_social if self.tienda else None,
+            'tienda_zona': self.tienda.zona.nombre if self.tienda and self.tienda.zona else None,
+            'vendedor_id': self.vendedor_id,
+            'vendedor': self.vendedor.username if self.vendedor else None,
+            'estado': self.estado,
+            'facturado_por': self.facturado_por,
+            'facturado_en': self.facturado_en.isoformat() if self.facturado_en else None,
+            'nota': self.nota,
+            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
+        }
+        if include_detalles:
+            d['detalles'] = [det.to_dict() for det in self.detalles]
+        return d
+
+
+class PedidoDetalle(db.Model):
+    __tablename__ = 'pedidos_detalle'
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedidos.id', ondelete='CASCADE'), nullable=False)
     producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
+    cantidad_bultos = db.Column(db.Integer, nullable=False, default=0)
+    cantidad_unidades = db.Column(db.Integer, nullable=False, default=0)  # unidades sueltas
+
+    producto = db.relationship('Producto')
+
+    def to_dict(self):
+        p = self.producto
+        upb = p.unidades_por_bulto if p else 1
+        return {
+            'id': self.id,
+            'producto_id': self.producto_id,
+            'codigo': p.codigo if p else None,
+            'descripcion': p.descripcion if p else None,
+            'unidades_por_bulto': upb,
+            'cantidad_bultos': self.cantidad_bultos,
+            'cantidad_unidades': self.cantidad_unidades,
+            'total_unidades': (self.cantidad_bultos * upb) + self.cantidad_unidades,
+        }
+
+
+class EntregaDiaria(db.Model):
+    __tablename__ = 'entregas_diarias'
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('pedidos.id'), nullable=False)
+    chofer_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    # pendiente | entregada | rechazada | local_cerrado | parcial
+    estado = db.Column(db.String(20), default='pendiente')
+    latitud_checkin = db.Column(db.Numeric(10, 8))
+    longitud_checkin = db.Column(db.Numeric(11, 8))
+    distancia_metros = db.Column(db.Integer)
+    # local_cerrado | no_recibio | sin_pago | no_estaba_encargado | otro
+    motivo_incidencia = db.Column(db.String(50))
+    observacion = db.Column(db.Text)
+    foto_evidencia_url = db.Column(db.String(500))
+    hora_registro = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+    sincronizado_en = db.Column(db.DateTime(timezone=True))
+
+    pedido = db.relationship('Pedido', backref='entregas')
+    chofer = db.relationship('Usuario', foreign_keys=[chofer_id])
+    devoluciones = db.relationship('EntregaDevolucion', backref='entrega', cascade='all, delete-orphan')
+
+    def to_dict(self, include_devoluciones=False):
+        d = {
+            'id': self.id,
+            'pedido_id': self.pedido_id,
+            'chofer_id': self.chofer_id,
+            'chofer': self.chofer.username if self.chofer else None,
+            'estado': self.estado,
+            'latitud_checkin': float(self.latitud_checkin) if self.latitud_checkin is not None else None,
+            'longitud_checkin': float(self.longitud_checkin) if self.longitud_checkin is not None else None,
+            'distancia_metros': self.distancia_metros,
+            'motivo_incidencia': self.motivo_incidencia,
+            'observacion': self.observacion,
+            'foto_evidencia_url': self.foto_evidencia_url,
+            'hora_registro': self.hora_registro.isoformat() if self.hora_registro else None,
+            'sincronizado_en': self.sincronizado_en.isoformat() if self.sincronizado_en else None,
+        }
+        if include_devoluciones:
+            d['devoluciones'] = [dev.to_dict() for dev in self.devoluciones]
+        return d
+
+
+class EntregaDevolucion(db.Model):
+    __tablename__ = 'entregas_devoluciones'
+    id = db.Column(db.Integer, primary_key=True)
+    entrega_id = db.Column(db.Integer, db.ForeignKey('entregas_diarias.id', ondelete='CASCADE'), nullable=False)
+    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
+    cantidad_bultos = db.Column(db.Integer, nullable=False, default=0)
     cantidad_unidades = db.Column(db.Integer, nullable=False, default=0)
+    # error_pedido | mercancia_danada | cliente_no_recibio | otro
+    motivo = db.Column(db.String(50))
+    reingresa_almacen = db.Column(db.Boolean, nullable=False, default=True)
 
-    cliente = db.relationship('Cliente', backref='stock')
     producto = db.relationship('Producto')
-    __table_args__ = (db.UniqueConstraint('cliente_id', 'producto_id'),)
 
     def to_dict(self):
         p = self.producto
         upb = p.unidades_por_bulto if p else 1
-        bultos = self.cantidad_unidades // upb
-        unidades_sueltas = self.cantidad_unidades % upb
         return {
             'id': self.id,
-            'cliente_id': self.cliente_id,
             'producto_id': self.producto_id,
             'codigo': p.codigo if p else None,
             'descripcion': p.descripcion if p else None,
             'unidades_por_bulto': upb,
+            'cantidad_bultos': self.cantidad_bultos,
             'cantidad_unidades': self.cantidad_unidades,
-            'bultos': bultos,
-            'unidades_sueltas': unidades_sueltas,
+            'total_unidades': (self.cantidad_bultos * upb) + self.cantidad_unidades,
+            'motivo': self.motivo,
+            'reingresa_almacen': self.reingresa_almacen,
         }
 
 
-class Devolucion(db.Model):
-    __tablename__ = 'devoluciones'
+class SolicitudGeoref(db.Model):
+    __tablename__ = 'solicitudes_georef'
     id = db.Column(db.Integer, primary_key=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
-    orden_origen_id = db.Column(db.Integer, db.ForeignKey('ordenes_despacho.id'))
-    fecha = db.Column(db.Date, nullable=False, default=datetime.date.today)
-    nota = db.Column(db.Text)
-    reingresar_almacen = db.Column(db.Boolean, nullable=False, default=False)
+    tienda_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
+    chofer_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    latitud_actual = db.Column(db.Numeric(10, 8))
+    longitud_actual = db.Column(db.Numeric(11, 8))
+    latitud_sugerida = db.Column(db.Numeric(10, 8), nullable=False)
+    longitud_sugerida = db.Column(db.Numeric(11, 8), nullable=False)
+    motivo = db.Column(db.Text)
+    # pendiente | aprobada | rechazada
+    estado = db.Column(db.String(20), default='pendiente')
+    revisado_por = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
+    revisado_en = db.Column(db.DateTime(timezone=True))
     creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
 
-    cliente = db.relationship('Cliente', backref='devoluciones')
-    orden_origen = db.relationship('OrdenDespacho')
-    detalles = db.relationship('DevolucionDetalle', backref='devolucion', cascade='all, delete-orphan')
+    tienda = db.relationship('Cliente', backref='solicitudes_georef', foreign_keys=[tienda_id])
+    chofer = db.relationship('Usuario', foreign_keys=[chofer_id])
+    revisor = db.relationship('Usuario', foreign_keys=[revisado_por])
 
-    def to_dict(self, include_detalles=False):
-        d = {
+    def to_dict(self):
+        return {
             'id': self.id,
-            'cliente_id': self.cliente_id,
-            'cliente': self.cliente.razon_social if self.cliente else None,
-            'orden_origen_id': self.orden_origen_id,
-            'numero_orden_origen': self.orden_origen.numero_orden if self.orden_origen else None,
-            'fecha': self.fecha.isoformat(),
-            'nota': self.nota,
-            'reingresar_almacen': self.reingresar_almacen,
+            'tienda_id': self.tienda_id,
+            'tienda': self.tienda.razon_social if self.tienda else None,
+            'chofer_id': self.chofer_id,
+            'chofer': self.chofer.username if self.chofer else None,
+            'latitud_actual': float(self.latitud_actual) if self.latitud_actual is not None else None,
+            'longitud_actual': float(self.longitud_actual) if self.longitud_actual is not None else None,
+            'latitud_sugerida': float(self.latitud_sugerida),
+            'longitud_sugerida': float(self.longitud_sugerida),
+            'motivo': self.motivo,
+            'estado': self.estado,
+            'revisado_por': self.revisado_por,
+            'revisado_en': self.revisado_en.isoformat() if self.revisado_en else None,
             'creado_en': self.creado_en.isoformat() if self.creado_en else None,
-        }
-        if include_detalles:
-            d['detalles'] = [det.to_dict() for det in self.detalles]
-        return d
-
-
-class DevolucionDetalle(db.Model):
-    __tablename__ = 'devoluciones_detalle'
-    id = db.Column(db.Integer, primary_key=True)
-    devolucion_id = db.Column(db.Integer, db.ForeignKey('devoluciones.id', ondelete='CASCADE'), nullable=False)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
-    cantidad_unidades = db.Column(db.Integer, nullable=False)
-
-    producto = db.relationship('Producto')
-
-    def to_dict(self):
-        p = self.producto
-        return {
-            'id': self.id,
-            'producto_id': self.producto_id,
-            'codigo': p.codigo if p else None,
-            'descripcion': p.descripcion if p else None,
-            'cantidad_unidades': self.cantidad_unidades,
-        }
-
-
-class ReporteVenta(db.Model):
-    __tablename__ = 'reportes_venta'
-    id = db.Column(db.Integer, primary_key=True)
-    cliente_id = db.Column(db.Integer, db.ForeignKey('clientes.id'), nullable=False)
-    orden_id = db.Column(db.Integer, db.ForeignKey('ordenes_despacho.id'), nullable=True)
-    fecha = db.Column(db.Date, nullable=False, default=datetime.date.today)
-    tasa_bcv_id = db.Column(db.Integer, db.ForeignKey('tasas_bcv.id'), nullable=False)
-    total_usd = db.Column(db.Numeric(15, 2), nullable=False, default=0)
-    total_bs = db.Column(db.Numeric(15, 2), nullable=False, default=0)
-    status = db.Column(db.String(20), default='pendiente')
-    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
-
-    cliente = db.relationship('Cliente', backref='reportes_venta')
-    orden = db.relationship('OrdenDespacho', backref='reportes', foreign_keys=[orden_id])
-    tasa = db.relationship('TasaBCV')
-    detalles = db.relationship('ReporteVentaDetalle', backref='reporte', cascade='all, delete-orphan')
-
-    def to_dict(self, include_detalles=False):
-        d = {
-            'id': self.id,
-            'cliente_id': self.cliente_id,
-            'orden_id': self.orden_id,
-            'cliente': self.cliente.razon_social if self.cliente else None,
-            'fecha': self.fecha.isoformat(),
-            'tasa_bcv_id': self.tasa_bcv_id,
-            'tasa_valor': float(self.tasa.valor) if self.tasa else None,
-            'total_usd': float(self.total_usd),
-            'total_bs': float(self.total_bs),
-            'status': self.status,
-            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
-        }
-        if include_detalles:
-            d['detalles'] = [det.to_dict() for det in self.detalles]
-        return d
-
-
-class ReporteVentaDetalle(db.Model):
-    __tablename__ = 'reportes_venta_detalle'
-    id = db.Column(db.Integer, primary_key=True)
-    reporte_id = db.Column(db.Integer, db.ForeignKey('reportes_venta.id', ondelete='CASCADE'), nullable=False)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
-    cantidad_unidades = db.Column(db.Integer, nullable=False)
-    precio_usd_momento = db.Column(db.Numeric(15, 2), nullable=False)
-
-    producto = db.relationship('Producto')
-
-    def to_dict(self):
-        p = self.producto
-        return {
-            'id': self.id,
-            'producto_id': self.producto_id,
-            'codigo': p.codigo if p else None,
-            'descripcion': p.descripcion if p else None,
-            'cantidad_unidades': self.cantidad_unidades,
-            'precio_usd_momento': float(self.precio_usd_momento),
-            'total_usd': float(self.cantidad_unidades * self.precio_usd_momento),
-        }
-
-
-class InventarioCentral(db.Model):
-    __tablename__ = 'inventario_central'
-    id = db.Column(db.Integer, primary_key=True)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False, unique=True)
-    cantidad_unidades = db.Column(db.Integer, nullable=False, default=0)
-
-    producto = db.relationship('Producto')
-
-    def to_dict(self):
-        p = self.producto
-        upb = p.unidades_por_bulto if p else 1
-        return {
-            'id': self.id,
-            'producto_id': self.producto_id,
-            'codigo': p.codigo if p else None,
-            'descripcion': p.descripcion if p else None,
-            'grupo': p.grupo.nombre if p and p.grupo else None,
-            'unidades_por_bulto': upb,
-            'cantidad_unidades': self.cantidad_unidades,
-            'bultos': self.cantidad_unidades // upb,
-            'unidades_sueltas': self.cantidad_unidades % upb,
-        }
-
-
-class EntradaInventario(db.Model):
-    __tablename__ = 'entradas_inventario'
-    id = db.Column(db.Integer, primary_key=True)
-    producto_id = db.Column(db.Integer, db.ForeignKey('productos.id'), nullable=False)
-    cantidad_unidades = db.Column(db.Integer, nullable=False)
-    fecha = db.Column(db.Date, nullable=False, default=datetime.date.today)
-    nota = db.Column(db.Text)
-    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
-
-    producto = db.relationship('Producto')
-
-    def to_dict(self):
-        p = self.producto
-        upb = p.unidades_por_bulto if p else 1
-        return {
-            'id': self.id,
-            'producto_id': self.producto_id,
-            'codigo': p.codigo if p else None,
-            'descripcion': p.descripcion if p else None,
-            'unidades_por_bulto': upb,
-            'cantidad_unidades': self.cantidad_unidades,
-            'bultos': self.cantidad_unidades // upb,
-            'fecha': self.fecha.isoformat(),
-            'nota': self.nota,
         }

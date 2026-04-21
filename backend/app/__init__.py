@@ -10,14 +10,12 @@ db = SQLAlchemy()
 migrate = Migrate()
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
-# Carpeta donde el Dockerfile de Railway copia el build de React
 REACT_BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'react_build')
 
 
 def create_app():
     app = Flask(__name__)
 
-    # Railway entrega "postgres://..." pero SQLAlchemy requiere "postgresql://..."
     db_url = os.environ.get('DATABASE_URL', 'postgresql://appuser:dev@localhost:5432/consignacion')
     if db_url.startswith('postgres://'):
         db_url = db_url.replace('postgres://', 'postgresql://', 1)
@@ -37,7 +35,8 @@ def create_app():
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-        response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+        # Allow geolocation for field workers
+        response.headers['Permissions-Policy'] = 'geolocation=(self), microphone=(), camera=()'
         return response
 
     from app import models  # noqa: F401
@@ -46,10 +45,6 @@ def create_app():
     from app.routes.maestras import bp as maestras_bp
     from app.routes.clientes import bp as clientes_bp
     from app.routes.productos import bp as productos_bp
-    from app.routes.tasas import bp as tasas_bp
-    from app.routes.ordenes import bp as ordenes_bp
-    from app.routes.reportes_venta import bp as reportes_bp
-    from app.routes.devoluciones import bp as devoluciones_bp
     from app.routes.dashboard import bp as dashboard_bp
     from app.routes.inventario import bp as inventario_bp
     from app.routes.auth import bp as auth_bp
@@ -59,17 +54,11 @@ def create_app():
     app.register_blueprint(maestras_bp, url_prefix='/api')
     app.register_blueprint(clientes_bp, url_prefix='/api/clientes')
     app.register_blueprint(productos_bp, url_prefix='/api/productos')
-    app.register_blueprint(tasas_bp, url_prefix='/api/tasas')
-    app.register_blueprint(ordenes_bp, url_prefix='/api/ordenes')
-    app.register_blueprint(reportes_bp, url_prefix='/api/reportes-venta')
-    app.register_blueprint(devoluciones_bp, url_prefix='/api/devoluciones')
     app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
     app.register_blueprint(inventario_bp, url_prefix='/api/inventario')
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(usuarios_bp, url_prefix='/api/usuarios')
 
-    # Defer DB init to first request so the app starts even if Postgres
-    # isn't ready yet (e.g. Railway cold start, wrong DATABASE_URL, etc.)
     _ready = {'done': False}
 
     @app.before_request
@@ -81,7 +70,6 @@ def create_app():
             _seed_admin(db)
             _ready['done'] = True
 
-    # Serve React build when running as monolith (Railway deploy)
     if os.path.isdir(REACT_BUILD):
         @app.route('/', defaults={'path': ''})
         @app.route('/<path:path>')
@@ -97,18 +85,72 @@ def create_app():
 def _run_migrations():
     from sqlalchemy import text
     with db.engine.connect() as conn:
+        # Drop legacy consignment tables (order matters due to FKs)
+        conn.execute(text("DROP TABLE IF EXISTS reportes_venta_detalle CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS reportes_venta CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS ordenes_despacho_detalle CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS devoluciones_detalle CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS devoluciones CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS ordenes_despacho CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS stock_consignacion CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS entradas_inventario CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS inventario_central CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS tasas_bcv CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS clientes_lista_precios CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS productos_precios CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS listas_precios CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS clientes_telefonos CASCADE"))
+        conn.execute(text("DROP TABLE IF EXISTS grupos_clientes CASCADE"))
+
+        # Add new columns to clientes
         conn.execute(text(
-            "ALTER TABLE ordenes_despacho ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'activa'"
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS vendedor_id INTEGER REFERENCES usuarios(id)"
         ))
         conn.execute(text(
-            "ALTER TABLE reportes_venta ADD COLUMN IF NOT EXISTS orden_id INTEGER REFERENCES ordenes_despacho(id)"
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS empresa VARCHAR(20) DEFAULT 'confibox'"
         ))
         conn.execute(text(
-            "ALTER TABLE devoluciones ADD COLUMN IF NOT EXISTS reingresar_almacen BOOLEAN NOT NULL DEFAULT FALSE"
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS telefono VARCHAR(30)"
         ))
         conn.execute(text(
-            "ALTER TABLE productos_precios ALTER COLUMN precio_usd TYPE NUMERIC(15,6)"
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS latitud NUMERIC(10,8)"
         ))
+        conn.execute(text(
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS longitud NUMERIC(11,8)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS foto_url VARCHAR(500)"
+        ))
+
+        # Drop legacy clientes columns if they exist
+        conn.execute(text(
+            "ALTER TABLE clientes DROP COLUMN IF EXISTS grupo_id"
+        ))
+        conn.execute(text(
+            "ALTER TABLE clientes DROP COLUMN IF EXISTS cobrador"
+        ))
+        conn.execute(text(
+            "ALTER TABLE clientes DROP COLUMN IF EXISTS contacto"
+        ))
+        conn.execute(text(
+            "ALTER TABLE clientes DROP COLUMN IF EXISTS vendedor"
+        ))
+
+        # Add color to zonas
+        conn.execute(text(
+            "ALTER TABLE zonas ADD COLUMN IF NOT EXISTS color VARCHAR(20)"
+        ))
+
+        # Drop legacy productos columns if they exist
+        conn.execute(text(
+            "ALTER TABLE productos DROP COLUMN IF EXISTS codigo_barras"
+        ))
+
+        # Remove legacy cliente_id from usuarios (no longer needed)
+        conn.execute(text(
+            "ALTER TABLE usuarios DROP COLUMN IF EXISTS cliente_id"
+        ))
+
         conn.commit()
 
 
@@ -116,7 +158,7 @@ def _seed_config(db):
     from app.models import ConfigEmpresa
     if not ConfigEmpresa.query.first():
         db.session.add(ConfigEmpresa(
-            nombre='MI EMPRESA C.A.',
+            nombre='CONFIBOX C.A.',
             rif='J-00000000-0',
             direccion='Dirección de la empresa',
             ciudad='Ciudad'

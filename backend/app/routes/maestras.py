@@ -1,162 +1,99 @@
 from flask import Blueprint, jsonify, request
 from app import db
-from app.models import Zona, GrupoCliente, GrupoProducto, ListaPrecio, Cliente, Producto
+from app.models import Zona, GrupoProducto, Cliente, Producto
 from app.auth import require_role
 
 bp = Blueprint('maestras', __name__)
 
-
-def _crud(model):
-    def get_all():
-        items = model.query.order_by(model.nombre).all()
-        return jsonify([i.to_dict() for i in items])
-
-    def create():
-        data = request.get_json()
-        if not data.get('nombre'):
-            return jsonify({'error': 'nombre requerido'}), 400
-        item = model(nombre=data['nombre'])
-        db.session.add(item)
-        db.session.commit()
-        return jsonify(item.to_dict()), 201
-
-    def update(id):
-        item = model.query.get_or_404(id)
-        data = request.get_json()
-        if 'nombre' in data:
-            item.nombre = data['nombre']
-        db.session.commit()
-        return jsonify(item.to_dict())
-
-    def delete(id):
-        item = model.query.get_or_404(id)
-        # Check usage before deleting
-        if model is Zona:
-            n = Cliente.query.filter_by(zona_id=id).count()
-            if n:
-                return jsonify({'error': f'No se puede eliminar: {n} cliente(s) usan esta zona.'}), 409
-        elif model is GrupoCliente:
-            n = Cliente.query.filter_by(grupo_id=id).count()
-            if n:
-                return jsonify({'error': f'No se puede eliminar: {n} cliente(s) pertenecen a este grupo.'}), 409
-        elif model is GrupoProducto:
-            n = Producto.query.filter_by(grupo_id=id, activo=True).count()
-            if n:
-                return jsonify({'error': f'No se puede eliminar: {n} producto(s) pertenecen a este grupo.'}), 409
-        elif model is ListaPrecio:
-            from app.models import ProductoPrecio
-            n_prod = ProductoPrecio.query.filter_by(lista_id=id).count()
-            n_cli = db.session.execute(
-                db.text('SELECT COUNT(*) FROM clientes_lista_precios WHERE lista_id = :id'),
-                {'id': id}
-            ).scalar()
-            if n_prod or n_cli:
-                return jsonify({
-                    'error': f'No se puede eliminar: esta lista tiene precios en {n_prod} producto(s) '
-                             f'y está asignada a {n_cli} cliente(s).'
-                }), 409
-        db.session.delete(item)
-        db.session.commit()
-        return '', 204
-
-    return get_all, create, update, delete
+ROLES_ADMIN = ('admin',)
+ROLES_STAFF = ('admin', 'vendedor', 'facturacion', 'almacenista', 'chofer')
 
 
-# Zonas
+# ── Zonas ─────────────────────────────────────────────────────────────────────
+
 @bp.route('/zonas', methods=['GET'])
-@require_role('admin')
+@require_role(*ROLES_STAFF)
 def get_zonas():
-    return _crud(Zona)[0]()
+    zonas = Zona.query.order_by(Zona.nombre).all()
+    return jsonify([z.to_dict() for z in zonas])
 
 
 @bp.route('/zonas', methods=['POST'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def create_zona():
-    return _crud(Zona)[1]()
+    data = request.get_json() or {}
+    if not data.get('nombre'):
+        return jsonify({'error': 'nombre requerido'}), 400
+    z = Zona(nombre=data['nombre'], color=data.get('color'))
+    db.session.add(z)
+    db.session.commit()
+    return jsonify(z.to_dict()), 201
 
 
 @bp.route('/zonas/<int:id>', methods=['PUT'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def update_zona(id):
-    return _crud(Zona)[2](id)
+    z = Zona.query.get_or_404(id)
+    data = request.get_json() or {}
+    if 'nombre' in data:
+        z.nombre = data['nombre']
+    if 'color' in data:
+        z.color = data['color']
+    db.session.commit()
+    return jsonify(z.to_dict())
 
 
 @bp.route('/zonas/<int:id>', methods=['DELETE'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def delete_zona(id):
-    return _crud(Zona)[3](id)
+    z = Zona.query.get_or_404(id)
+    n = Cliente.query.filter_by(zona_id=id).count()
+    if n:
+        return jsonify({'error': f'No se puede eliminar: {n} tienda(s) pertenecen a esta zona.'}), 409
+    db.session.delete(z)
+    db.session.commit()
+    return '', 204
 
 
-# Grupos Clientes
-@bp.route('/grupos-clientes', methods=['GET'])
-@require_role('admin')
-def get_grupos_clientes():
-    return _crud(GrupoCliente)[0]()
+# ── Grupos de Productos ────────────────────────────────────────────────────────
 
-
-@bp.route('/grupos-clientes', methods=['POST'])
-@require_role('admin')
-def create_grupo_cliente():
-    return _crud(GrupoCliente)[1]()
-
-
-@bp.route('/grupos-clientes/<int:id>', methods=['PUT'])
-@require_role('admin')
-def update_grupo_cliente(id):
-    return _crud(GrupoCliente)[2](id)
-
-
-@bp.route('/grupos-clientes/<int:id>', methods=['DELETE'])
-@require_role('admin')
-def delete_grupo_cliente(id):
-    return _crud(GrupoCliente)[3](id)
-
-
-# Grupos Productos
 @bp.route('/grupos-productos', methods=['GET'])
-@require_role('admin')
+@require_role(*ROLES_STAFF)
 def get_grupos_productos():
-    return _crud(GrupoProducto)[0]()
+    grupos = GrupoProducto.query.order_by(GrupoProducto.nombre).all()
+    return jsonify([g.to_dict() for g in grupos])
 
 
 @bp.route('/grupos-productos', methods=['POST'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def create_grupo_producto():
-    return _crud(GrupoProducto)[1]()
+    data = request.get_json() or {}
+    if not data.get('nombre'):
+        return jsonify({'error': 'nombre requerido'}), 400
+    g = GrupoProducto(nombre=data['nombre'])
+    db.session.add(g)
+    db.session.commit()
+    return jsonify(g.to_dict()), 201
 
 
 @bp.route('/grupos-productos/<int:id>', methods=['PUT'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def update_grupo_producto(id):
-    return _crud(GrupoProducto)[2](id)
+    g = GrupoProducto.query.get_or_404(id)
+    data = request.get_json() or {}
+    if 'nombre' in data:
+        g.nombre = data['nombre']
+    db.session.commit()
+    return jsonify(g.to_dict())
 
 
 @bp.route('/grupos-productos/<int:id>', methods=['DELETE'])
-@require_role('admin')
+@require_role(*ROLES_ADMIN)
 def delete_grupo_producto(id):
-    return _crud(GrupoProducto)[3](id)
-
-
-# Listas de Precios
-@bp.route('/listas-precios', methods=['GET'])
-@require_role('admin')
-def get_listas_precios():
-    return _crud(ListaPrecio)[0]()
-
-
-@bp.route('/listas-precios', methods=['POST'])
-@require_role('admin')
-def create_lista_precio():
-    return _crud(ListaPrecio)[1]()
-
-
-@bp.route('/listas-precios/<int:id>', methods=['PUT'])
-@require_role('admin')
-def update_lista_precio(id):
-    return _crud(ListaPrecio)[2](id)
-
-
-@bp.route('/listas-precios/<int:id>', methods=['DELETE'])
-@require_role('admin')
-def delete_lista_precio(id):
-    return _crud(ListaPrecio)[3](id)
+    g = GrupoProducto.query.get_or_404(id)
+    n = Producto.query.filter_by(grupo_id=id, activo=True).count()
+    if n:
+        return jsonify({'error': f'No se puede eliminar: {n} producto(s) pertenecen a este grupo.'}), 409
+    db.session.delete(g)
+    db.session.commit()
+    return '', 204
