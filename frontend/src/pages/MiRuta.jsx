@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { getMiRuta, checkinEntrega, createDevolucionEntrega, createSolicitud } from '../api'
+import {
+  getMiRuta, checkinEntrega, createDevolucionEntrega, createSolicitud,
+} from '../api'
 import MapaTiendas from '../components/MapaTiendas'
 import useCurrentPosition from '../hooks/useCurrentPosition'
+import { useOfflineSync } from '../hooks/useOfflineSync'
 import { Dialog, DialogContent } from '../components/ui/Dialog'
+
+const ROUTE_CACHE_KEY = 'confibox_ruta_cache'
 
 const ESTADO_COLOR = {
   pendiente:     'bg-gray-100 text-gray-700',
@@ -41,7 +46,7 @@ const MOTIVOS_DEVOLUCION = [
 
 // ── CheckinModal ───────────────────────────────────────────────────────────────
 
-function CheckinModal({ entrega, onClose, onDone }) {
+function CheckinModal({ entrega, onClose, onDone, onOffline }) {
   const { position, error: gpsError, loading: gpsLoading, getPosition } = useCurrentPosition()
   const [estadoSel, setEstadoSel] = useState('entregada')
   const [motivo, setMotivo] = useState('')
@@ -55,6 +60,23 @@ function CheckinModal({ entrega, onClose, onDone }) {
 
   const submit = async () => {
     setSubmitting(true)
+    const payload = {
+      entrega_id: entrega.id,
+      estado: estadoSel,
+      latitud: position?.lat ?? null,
+      longitud: position?.lng ?? null,
+      motivo_incidencia: motivo || null,
+      observacion: observacion || null,
+    }
+
+    // Check offline before calling API to avoid the interceptor's generic toast
+    if (!navigator.onLine) {
+      onOffline(payload)
+      toast('Sin conexión — se sincronizará al reconectarte', { icon: '📴' })
+      setSubmitting(false)
+      return
+    }
+
     try {
       await checkinEntrega(entrega.id, {
         estado: estadoSel,
@@ -70,6 +92,11 @@ function CheckinModal({ entrega, onClose, onDone }) {
       const data = err.response?.data
       if (data?.requiere_motivo) {
         setAlertaDistancia(data.distancia_metros)
+      } else if (!err.response) {
+        // Network error mid-request
+        onOffline(payload)
+        toast('Sin conexión — se sincronizará al reconectarte', { icon: '📴' })
+        onClose()
       } else {
         toast.error(data?.error ?? 'Error al registrar entrega')
       }
@@ -350,10 +377,7 @@ function GeorefModal({ entrega, onClose }) {
             ) : (
               <div>
                 <p className="text-red-500 text-xs mb-2">{gpsError ?? 'No se pudo obtener ubicación'}</p>
-                <button
-                  onClick={getPosition}
-                  className="text-xs text-blue-600 hover:underline"
-                >
+                <button onClick={getPosition} className="text-xs text-blue-600 hover:underline">
                   Reintentar
                 </button>
               </div>
@@ -398,26 +422,79 @@ export default function MiRuta() {
   const [checkinId, setCheckinId] = useState(null)
   const [devolucionId, setDevolucionId] = useState(null)
   const [georefId, setGeorefId] = useState(null)
+  const [localEstados, setLocalEstados] = useState({})
 
-  const load = () => {
+  const { isOnline, queue, enqueue, syncNow, syncing } = useOfflineSync()
+  const pendingIds = new Set(queue.map((q) => q.entrega_id))
+
+  const load = async () => {
     setLoading(true)
-    getMiRuta()
-      .then((r) => setEntregas(r.data))
-      .catch(() => toast.error('Error cargando ruta'))
-      .finally(() => setLoading(false))
+    try {
+      const r = await getMiRuta()
+      setEntregas(r.data)
+      setLocalEstados({})
+      localStorage.setItem(ROUTE_CACHE_KEY, JSON.stringify(r.data))
+    } catch {
+      const cached = localStorage.getItem(ROUTE_CACHE_KEY)
+      if (cached) {
+        try {
+          setEntregas(JSON.parse(cached))
+          toast('Mostrando ruta guardada', { icon: '📴' })
+        } catch {
+          toast.error('Error cargando ruta')
+        }
+      } else {
+        toast.error('Error cargando ruta')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    // Reload silently when connection is restored
+    const handleOnline = () => load()
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
 
-  const pendientes  = entregas.filter((e) => ['pendiente', 'parcial'].includes(e.estado)).length
-  const completadas = entregas.filter((e) => e.estado === 'entregada').length
+  const handleOfflineCheckin = (payload) => {
+    enqueue(payload)
+    setLocalEstados((s) => ({ ...s, [payload.entrega_id]: payload.estado }))
+    setCheckinId(null)
+  }
+
+  const pendientes  = entregas.filter((e) => ['pendiente', 'parcial'].includes(localEstados[e.id] ?? e.estado)).length
+  const completadas = entregas.filter((e) => (localEstados[e.id] ?? e.estado) === 'entregada').length
   const tiendas     = entregas.filter((e) => e.tienda?.latitud != null).map((e) => e.tienda)
-  const activeEntrega   = entregas.find((e) => e.id === checkinId)
+  const activeEntrega     = entregas.find((e) => e.id === checkinId)
   const devolucionEntrega = entregas.find((e) => e.id === devolucionId)
-  const georefEntrega   = entregas.find((e) => e.id === georefId)
+  const georefEntrega     = entregas.find((e) => e.id === georefId)
 
   return (
     <div>
+      {/* Offline status bar */}
+      {!isOnline && (
+        <div className="bg-orange-500 text-white text-xs py-2 px-4 text-center rounded-lg mb-4 font-medium">
+          📴 Sin conexión — las acciones se guardarán y se enviarán al reconectarte
+        </div>
+      )}
+      {isOnline && queue.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 mb-4 flex items-center justify-between gap-3 text-sm">
+          <span className="text-blue-700">
+            {queue.length} acción{queue.length !== 1 ? 'es' : ''} pendiente{queue.length !== 1 ? 's' : ''} de sincronizar
+          </span>
+          <button
+            onClick={syncNow}
+            disabled={syncing}
+            className="text-blue-600 font-medium hover:underline disabled:opacity-50 whitespace-nowrap"
+          >
+            {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Mi Ruta</h2>
@@ -449,20 +526,25 @@ export default function MiRuta() {
       ) : (
         <div className="space-y-3">
           {entregas.map((e, idx) => {
+            const estado = localEstados[e.id] ?? e.estado
+            const done = !['pendiente', 'parcial'].includes(estado)
+            const isPending = pendingIds.has(e.id)
             const t = e.tienda
-            const done = !['pendiente', 'parcial'].includes(e.estado)
             return (
               <div
                 key={e.id}
-                className={`bg-white rounded-lg shadow p-4 ${done ? 'opacity-70' : ''}`}
+                className={`bg-white rounded-lg shadow p-4 ${done && !isPending ? 'opacity-70' : ''}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-xs text-gray-400 font-mono">#{idx + 1}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[e.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {ESTADO_LABEL[e.estado] ?? e.estado}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[estado] ?? 'bg-gray-100 text-gray-600'}`}>
+                        {ESTADO_LABEL[estado] ?? estado}
                       </span>
+                      {isPending && (
+                        <span className="text-xs text-orange-500 font-medium">⏳ Pendiente sync</span>
+                      )}
                     </div>
                     <p className="font-semibold text-gray-800 truncate">{t?.razon_social ?? '—'}</p>
                     {t?.direccion && <p className="text-xs text-gray-500 mt-0.5">{t.direccion}</p>}
@@ -493,7 +575,7 @@ export default function MiRuta() {
                         </a>
                       </div>
                     )}
-                    {!done && (
+                    {!done && !isPending && (
                       <button
                         onClick={() => setCheckinId(e.id)}
                         className="text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg font-medium"
@@ -543,6 +625,7 @@ export default function MiRuta() {
           entrega={activeEntrega}
           onClose={() => setCheckinId(null)}
           onDone={load}
+          onOffline={handleOfflineCheckin}
         />
       )}
       {devolucionEntrega && (
