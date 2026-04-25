@@ -506,6 +506,22 @@ export default function MiRuta() {
   const completadas = entregas.filter((e) => (localEstados[e.id] ?? e.estado) === 'entregada').length
   const tiendas     = entregas.filter((e) => e.tienda?.latitud != null).map((e) => e.tienda)
   const activeEntrega     = entregas.find((e) => e.id === checkinId)
+
+  // Map helpers — color and stop-number per tienda
+  const ESTADO_COLOR_PIN = {
+    entregada:     '#22C55E',
+    rechazada:     '#EF4444',
+    local_cerrado: '#F97316',
+    parcial:       '#EAB308',
+  }
+  const estadoPorTiendaId = Object.fromEntries(
+    entregas.filter((e) => e.tienda).map((e) => [e.tienda.id, localEstados[e.id] ?? e.estado])
+  )
+  const numeroPorTiendaId = Object.fromEntries(
+    entregas.filter((e) => e.tienda?.latitud != null).map((e, idx) => [e.tienda.id, idx + 1])
+  )
+  const getMarkerColor  = (t) => ESTADO_COLOR_PIN[estadoPorTiendaId[t.id]] ?? '#3B82F6'
+  const getMarkerNumber = (t) => numeroPorTiendaId[t.id] ?? null
   const devolucionEntrega = entregas.find((e) => e.id === devolucionId)
   const georefEntrega     = entregas.find((e) => e.id === georefId)
 
@@ -559,7 +575,15 @@ export default function MiRuta() {
           No tienes entregas asignadas en este momento.
         </div>
       ) : vista === 'mapa' ? (
-        <MapaTiendas tiendas={tiendas} height="500px" />
+        <MapaTiendas
+          tiendas={tiendas}
+          height="500px"
+          showMyLocation
+          showLabels
+          routeButton
+          markerColor={getMarkerColor}
+          markerNumber={getMarkerNumber}
+        />
       ) : (
         <div className="space-y-3">
           {entregas.map((e, idx) => {
