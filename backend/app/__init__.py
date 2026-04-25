@@ -164,6 +164,11 @@ def _run_migrations():
             "ALTER TABLE usuarios ALTER COLUMN password_hash TYPE VARCHAR(512)"
         ))
 
+        # Chofer departure timestamp
+        conn.execute(text(
+            "ALTER TABLE entregas_diarias ADD COLUMN IF NOT EXISTS salida_en TIMESTAMPTZ"
+        ))
+
         conn.commit()
 
 

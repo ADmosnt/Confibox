@@ -72,6 +72,9 @@ export const getStockConsolidado = () => api.get('/inventario/stock')
 
 // ── Pedidos ────────────────────────────────────────────────────────────────
 export const getPedidos = (params) => api.get('/pedidos', { params })
+// Fetch multiple estados in one call: estados=['pendiente','facturado']
+export const getPedidosByEstados = (estados, extra) =>
+  api.get('/pedidos', { params: { ...extra, estado: estados.join(',') } })
 export const getPedido = (id) => api.get(`/pedidos/${id}`)
 export const createPedido = (data) => api.post('/pedidos', data)
 export const facturarPedido = (id) => api.put(`/pedidos/${id}/facturar`)
@@ -81,6 +84,7 @@ export const iniciarRuta = (id, data) => api.put(`/pedidos/${id}/iniciar-ruta`, 
 
 // ── Entregas ───────────────────────────────────────────────────────────────
 export const getMiRuta = () => api.get('/entregas/mi-ruta')
+export const iniciarJornada = () => api.put('/entregas/iniciar-jornada')
 export const getEntregas = (params) => api.get('/entregas', { params })
 export const getEntrega = (id) => api.get(`/entregas/${id}`)
 export const checkinEntrega = (id, data) => api.put(`/entregas/${id}/checkin`, data)

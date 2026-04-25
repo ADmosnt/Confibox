@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getDashboard } from '../api'
+import { EstadoBadge } from '../components/EstadoBadge'
+import { VenceBadge } from '../components/VenceBadge'
 
 function StatCard({ label, value, to, sub, color = 'text-gray-800' }) {
   const inner = (
@@ -13,12 +15,6 @@ function StatCard({ label, value, to, sub, color = 'text-gray-800' }) {
   return to ? <Link to={to} className="block">{inner}</Link> : inner
 }
 
-function VencimientoBadge({ fecha }) {
-  if (!fecha) return <span className="text-gray-400 text-xs">Sin fecha</span>
-  const dias = Math.ceil((new Date(fecha) - new Date()) / 86400000)
-  const color = dias <= 7 ? 'text-red-600 font-semibold' : dias <= 15 ? 'text-orange-500' : 'text-yellow-600'
-  return <span className={`text-xs ${color}`}>{fecha} ({dias}d)</span>
-}
 
 export default function Dashboard() {
   const [data, setData] = useState(null)
@@ -85,7 +81,7 @@ export default function Dashboard() {
                     <td className="px-5 py-3 font-medium">{l.descripcion}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{l.ubicacion_almacen ?? '—'}</td>
                     <td className="px-5 py-3 text-right">{l.cantidad_bultos}</td>
-                    <td className="px-5 py-3"><VencimientoBadge fecha={l.fecha_vencimiento} /></td>
+                    <td className="px-5 py-3"><VenceBadge fecha={l.fecha_vencimiento} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -131,26 +127,5 @@ export default function Dashboard() {
   )
 }
 
-export function EstadoBadge({ estado }) {
-  const MAP = {
-    pendiente:      'bg-gray-100 text-gray-700',
-    facturado:      'bg-blue-100 text-blue-700',
-    en_ruta:        'bg-yellow-100 text-yellow-700',
-    entregado:      'bg-green-100 text-green-700',
-    con_incidencia: 'bg-orange-100 text-orange-700',
-    anulado:        'bg-red-100 text-red-700',
-  }
-  const LABEL = {
-    pendiente:      'Pendiente',
-    facturado:      'Facturado',
-    en_ruta:        'En ruta',
-    entregado:      'Entregado',
-    con_incidencia: 'Incidencia',
-    anulado:        'Anulado',
-  }
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${MAP[estado] ?? 'bg-gray-100 text-gray-600'}`}>
-      {LABEL[estado] ?? estado}
-    </span>
-  )
-}
+// Re-exported so existing imports from './Dashboard' keep working
+export { EstadoBadge } from '../components/EstadoBadge'

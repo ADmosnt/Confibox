@@ -22,6 +22,44 @@ def _haversine(lat1, lon1, lat2, lon2):
     return int(2 * R * math.asin(math.sqrt(a)))
 
 
+# ── Iniciar jornada (chofer confirms departure) ────────────────────────────────
+
+@bp.route('/iniciar-jornada', methods=['PUT'])
+@require_role('chofer', 'admin')
+def iniciar_jornada():
+    """Stamp salida_en on all pending entregas for today's chofer.
+    Idempotent: re-calling after departure just returns current state."""
+    user = get_current_user()
+    chofer_id = user.id if user.rol == 'chofer' else request.get_json().get('chofer_id', user.id)
+
+    hoy = datetime.date.today()
+    entregas = (
+        EntregaDiaria.query
+        .filter(EntregaDiaria.chofer_id == chofer_id)
+        .join(Pedido)
+        .filter(Pedido.estado == 'en_ruta')
+        .all()
+    )
+
+    if not entregas:
+        return jsonify({'error': 'No hay entregas pendientes asignadas'}), 404
+
+    ahora = datetime.datetime.utcnow()
+    ya_salio = all(e.salida_en is not None for e in entregas)
+
+    if not ya_salio:
+        for e in entregas:
+            if e.salida_en is None:
+                e.salida_en = ahora
+        db.session.commit()
+
+    return jsonify({
+        'salida_en': ahora.isoformat() if not ya_salio else entregas[0].salida_en.isoformat(),
+        'entregas_actualizadas': 0 if ya_salio else len(entregas),
+        'ya_habia_salido': ya_salio,
+    })
+
+
 # ── Mi ruta (chofer) ───────────────────────────────────────────────────────────
 
 @bp.route('/mi-ruta', methods=['GET'])

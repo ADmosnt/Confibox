@@ -1,18 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { getEntregas } from '../api'
-
-const ESTADO_COLOR = {
-  pendiente:     'bg-gray-100 text-gray-700',
-  entregada:     'bg-green-100 text-green-700',
-  rechazada:     'bg-red-100 text-red-700',
-  local_cerrado: 'bg-orange-100 text-orange-700',
-  parcial:       'bg-yellow-100 text-yellow-700',
-}
-const ESTADO_LABEL = {
-  pendiente: 'Pendiente', entregada: 'Entregada', rechazada: 'Rechazada',
-  local_cerrado: 'Local cerrado', parcial: 'Parcial',
-}
+import { EntregaEstadoBadge, ENTREGA_LABEL } from '../components/EstadoBadge'
 
 export default function Entregas() {
   const [entregas, setEntregas] = useState([])
@@ -32,7 +22,7 @@ export default function Entregas() {
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-5">Entregas</h2>
+      <h2 className="text-xl font-bold text-gray-800 mb-5">Historial de Entregas</h2>
 
       <div className="flex flex-wrap gap-3 mb-5">
         <input
@@ -47,7 +37,7 @@ export default function Entregas() {
           className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="">Todos los estados</option>
-          {Object.entries(ESTADO_LABEL).map(([v, l]) => (
+          {Object.entries(ENTREGA_LABEL).map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
@@ -70,7 +60,8 @@ export default function Entregas() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
-                <th className="px-4 py-3 text-left">Pedido #</th>
+                <th className="px-4 py-3 text-left">Pedido</th>
+                <th className="px-4 py-3 text-left">Tienda</th>
                 <th className="px-4 py-3 text-left">Chofer</th>
                 <th className="px-4 py-3 text-center">Estado</th>
                 <th className="px-4 py-3 text-right">Distancia</th>
@@ -82,12 +73,17 @@ export default function Entregas() {
             <tbody className="divide-y divide-gray-100">
               {entregas.map((e) => (
                 <tr key={e.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-blue-600">{e.pedido_id}</td>
-                  <td className="px-4 py-3 text-gray-700">{e.chofer ?? '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {e.numero_pedido
+                      ? <Link to={`/pedidos/${e.pedido_id}`} className="text-blue-600 hover:underline">{e.numero_pedido}</Link>
+                      : <span className="text-gray-400">#{e.pedido_id}</span>}
+                  </td>
+                  <td className="px-4 py-3 text-gray-700 max-w-[160px]">
+                    <span className="block truncate" title={e.tienda}>{e.tienda ?? '—'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500">{e.chofer ?? '—'}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ESTADO_COLOR[e.estado] ?? 'bg-gray-100 text-gray-600'}`}>
-                      {ESTADO_LABEL[e.estado] ?? e.estado}
-                    </span>
+                    <EntregaEstadoBadge estado={e.estado} />
                   </td>
                   <td className="px-4 py-3 text-right text-gray-500">
                     {e.distancia_metros != null
@@ -100,7 +96,7 @@ export default function Entregas() {
                   <td className="px-4 py-3 text-gray-400 text-xs max-w-[160px]">
                     <span title={e.observacion} className="block truncate">{e.observacion ?? '—'}</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-400 text-xs">
+                  <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
                     {e.hora_registro
                       ? new Date(e.hora_registro).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })
                       : '—'}

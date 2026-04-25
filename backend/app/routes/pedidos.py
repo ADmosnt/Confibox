@@ -69,13 +69,25 @@ def list_pedidos():
     q = Pedido.query
     estado = request.args.get('estado')
     if estado:
-        q = q.filter(Pedido.estado == estado)
+        # Allow comma-separated: ?estado=pendiente,facturado
+        estados = [e.strip() for e in estado.split(',') if e.strip()]
+        q = q.filter(Pedido.estado.in_(estados))
     tienda_id = request.args.get('tienda_id')
     if tienda_id:
         q = q.filter(Pedido.tienda_id == int(tienda_id))
     vendedor_id = request.args.get('vendedor_id')
     if vendedor_id:
         q = q.filter(Pedido.vendedor_id == int(vendedor_id))
+    fecha = request.args.get('fecha')
+    if fecha:
+        try:
+            d = datetime.date.fromisoformat(fecha)
+            q = q.filter(
+                Pedido.creado_en >= datetime.datetime.combine(d, datetime.time.min),
+                Pedido.creado_en <= datetime.datetime.combine(d, datetime.time.max),
+            )
+        except ValueError:
+            return jsonify({'error': 'fecha inválida (YYYY-MM-DD)'}), 400
     pedidos = q.order_by(Pedido.creado_en.desc()).all()
     return jsonify([p.to_dict() for p in pedidos])
 

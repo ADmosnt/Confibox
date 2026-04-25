@@ -245,15 +245,21 @@ class EntregaDiaria(db.Model):
     foto_evidencia_url = db.Column(db.String(500))
     hora_registro = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
     sincronizado_en = db.Column(db.DateTime(timezone=True))
+    salida_en = db.Column(db.DateTime(timezone=True))   # when chofer confirmed departure
 
     pedido = db.relationship('Pedido', backref='entregas')
     chofer = db.relationship('Usuario', foreign_keys=[chofer_id])
     devoluciones = db.relationship('EntregaDevolucion', backref='entrega', cascade='all, delete-orphan')
 
     def to_dict(self, include_devoluciones=False):
+        pedido = self.pedido
+        tienda = pedido.tienda if pedido else None
         d = {
             'id': self.id,
             'pedido_id': self.pedido_id,
+            'numero_pedido': pedido.numero_pedido if pedido else None,
+            'tienda': tienda.razon_social if tienda else None,
+            'tienda_id': tienda.id if tienda else None,
             'chofer_id': self.chofer_id,
             'chofer': self.chofer.username if self.chofer else None,
             'estado': self.estado,
@@ -265,6 +271,7 @@ class EntregaDiaria(db.Model):
             'foto_evidencia_url': self.foto_evidencia_url,
             'hora_registro': self.hora_registro.isoformat() if self.hora_registro else None,
             'sincronizado_en': self.sincronizado_en.isoformat() if self.sincronizado_en else None,
+            'salida_en': self.salida_en.isoformat() if self.salida_en else None,
         }
         if include_devoluciones:
             d['devoluciones'] = [dev.to_dict() for dev in self.devoluciones]

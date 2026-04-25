@@ -1,26 +1,18 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  getMiRuta, checkinEntrega, createDevolucionEntrega, createSolicitud, uploadFile,
+  getMiRuta, iniciarJornada, checkinEntrega, createDevolucionEntrega, createSolicitud, uploadFile,
 } from '../api'
 import MapaTiendas from '../components/MapaTiendas'
 import useCurrentPosition from '../hooks/useCurrentPosition'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import { Dialog, DialogContent } from '../components/ui/Dialog'
+import { ENTREGA_COLOR, ENTREGA_LABEL } from '../components/EstadoBadge'
 
 const ROUTE_CACHE_KEY = 'confibox_ruta_cache'
 
-const ESTADO_COLOR = {
-  pendiente:     'bg-gray-100 text-gray-700',
-  entregada:     'bg-green-100 text-green-700',
-  rechazada:     'bg-red-100 text-red-700',
-  local_cerrado: 'bg-orange-100 text-orange-700',
-  parcial:       'bg-yellow-100 text-yellow-700',
-}
-const ESTADO_LABEL = {
-  pendiente: 'Pendiente', entregada: 'Entregada', rechazada: 'Rechazada',
-  local_cerrado: 'Local cerrado', parcial: 'Parcial',
-}
+const ESTADO_COLOR = ENTREGA_COLOR
+const ESTADO_LABEL = ENTREGA_LABEL
 
 const OPCIONES_ESTADO = [
   { value: 'entregada',     label: 'Entregada' },
@@ -460,6 +452,8 @@ export default function MiRuta() {
   const [devolucionId, setDevolucionId] = useState(null)
   const [georefId, setGeorefId] = useState(null)
   const [localEstados, setLocalEstados] = useState({})
+  const [salidaEn, setSalidaEn] = useState(null)   // departure timestamp from first entrega
+  const [salidaLoading, setSalidaLoading] = useState(false)
 
   const { isOnline, queue, enqueue, syncNow, syncing } = useOfflineSync()
   const pendingIds = new Set(queue.map((q) => q.entrega_id))
@@ -470,6 +464,9 @@ export default function MiRuta() {
       const r = await getMiRuta()
       setEntregas(r.data)
       setLocalEstados({})
+      // Persist the first salida_en we find (all same chofer/day share the timestamp)
+      const salida = r.data.find((e) => e.salida_en)?.salida_en ?? null
+      setSalidaEn(salida)
       localStorage.setItem(ROUTE_CACHE_KEY, JSON.stringify(r.data))
     } catch {
       const cached = localStorage.getItem(ROUTE_CACHE_KEY)
@@ -500,6 +497,23 @@ export default function MiRuta() {
     enqueue(payload)
     setLocalEstados((s) => ({ ...s, [payload.entrega_id]: payload.estado }))
     setCheckinId(null)
+  }
+
+  const handleIniciarJornada = async () => {
+    setSalidaLoading(true)
+    try {
+      const r = await iniciarJornada()
+      setSalidaEn(r.data.salida_en)
+      if (r.data.ya_habia_salido) {
+        toast('Ya habías confirmado la salida', { icon: '🚛' })
+      } else {
+        toast.success('Salida confirmada — ¡buen viaje!')
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al confirmar salida')
+    } finally {
+      setSalidaLoading(false)
+    }
   }
 
   const pendientes  = entregas.filter((e) => ['pendiente', 'parcial'].includes(localEstados[e.id] ?? e.estado)).length
@@ -546,6 +560,32 @@ export default function MiRuta() {
             {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
           </button>
         </div>
+      )}
+
+      {/* Departure confirmation banner */}
+      {!loading && entregas.length > 0 && (
+        salidaEn ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 mb-4 flex items-center gap-3 text-sm">
+            <span className="text-green-700 font-medium">🚛 Salida confirmada</span>
+            <span className="text-green-600 text-xs">
+              {new Date(salidaEn).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        ) : (
+          <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-gray-800">¿Listo para salir?</p>
+              <p className="text-xs text-gray-500">Confirma tu salida para registrar la hora de inicio de la jornada.</p>
+            </div>
+            <button
+              onClick={handleIniciarJornada}
+              disabled={salidaLoading}
+              className="shrink-0 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50"
+            >
+              {salidaLoading ? 'Confirmando...' : '🚛 Salir a repartir'}
+            </button>
+          </div>
+        )
       )}
 
       <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
@@ -663,6 +703,11 @@ export default function MiRuta() {
                     {e.distancia_metros != null && (
                       <span className={`text-xs ${e.distancia_metros > 50 ? 'text-orange-500' : 'text-gray-400'}`}>
                         {e.distancia_metros}m del punto
+                      </span>
+                    )}
+                    {done && e.hora_registro && (
+                      <span className="text-xs text-gray-400">
+                        ✓ {new Date(e.hora_registro).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>

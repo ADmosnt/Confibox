@@ -5,18 +5,9 @@ import {
   getPedido, getPickingList, iniciarRuta,
   facturarPedido, anularPedido, getUsuariosByRol,
 } from '../api'
-import { EstadoBadge } from './Dashboard'
+import { EstadoBadge } from '../components/EstadoBadge'
+import { VenceBadge } from '../components/VenceBadge'
 import { useAuth } from '../context/AuthContext'
-
-function VenceBadge({ fecha }) {
-  if (!fecha) return <span className="text-gray-400 text-xs">Sin venc.</span>
-  const dias = Math.ceil((new Date(fecha) - new Date()) / 86400000)
-  if (dias <= 0)  return <span className="text-xs font-semibold text-white bg-red-600 px-1.5 py-0.5 rounded">Vencido</span>
-  if (dias <= 7)  return <span className="text-xs font-semibold text-red-600">{fecha} ({dias}d)</span>
-  if (dias <= 15) return <span className="text-xs text-orange-500">{fecha} ({dias}d)</span>
-  if (dias <= 30) return <span className="text-xs text-yellow-600">{fecha} ({dias}d)</span>
-  return <span className="text-xs text-gray-500">{fecha}</span>
-}
 
 export default function PedidoDetalle() {
   const { id } = useParams()
