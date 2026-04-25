@@ -1,28 +1,22 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent } from './ui/Dialog'
-import {
-  getProducto, createProducto, updateProducto,
-  getGruposProductos, getListasPrecios,
-} from '../api'
+import { getProducto, createProducto, updateProducto, getGruposProductos } from '../api'
 import Alert from './Alert'
 
-const emptyForm = { codigo: '', descripcion: '', unidades_por_bulto: 1, grupo_id: '', activo: true, precios: [] }
+const emptyForm = { codigo: '', descripcion: '', unidades_por_bulto: 1, grupo_id: '', activo: true }
 
 export default function ProductoModal({ open, onClose, productoId, onSaved }) {
   const isEdit = Boolean(productoId)
   const [form, setForm] = useState(emptyForm)
   const [grupos, setGrupos] = useState([])
-  const [listas, setListas] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setError('')
-    Promise.all([getGruposProductos(), getListasPrecios()]).then(([g, l]) => {
-      setGrupos(g.data); setListas(l.data)
-    })
+    getGruposProductos().then((r) => setGrupos(r.data))
     if (isEdit) {
       getProducto(productoId).then((r) => setForm({ ...r.data, grupo_id: r.data.grupo_id ?? '' }))
     } else {
@@ -32,32 +26,12 @@ export default function ProductoModal({ open, onClose, productoId, onSaved }) {
 
   const set = (field, val) => setForm((f) => ({ ...f, [field]: val }))
 
-  const setPrecio = (listaId, valorBulto) => {
-    const upb = form.unidades_por_bulto || 1
-    const precioUsd = valorBulto === '' ? '' : String(Number(valorBulto) / upb)
-    const precios = [...form.precios]
-    const idx = precios.findIndex((p) => p.lista_id === listaId)
-    if (idx >= 0) precios[idx] = { ...precios[idx], precio_usd: precioUsd }
-    else precios.push({ lista_id: listaId, precio_usd: precioUsd })
-    set('precios', precios)
-  }
-
-  const getPrecio = (listaId) => {
-    const usd = form.precios.find((p) => p.lista_id === listaId)?.precio_usd ?? ''
-    if (usd === '') return ''
-    return (Number(usd) * (form.unidades_por_bulto || 1)).toFixed(2)
-  }
-
   const submit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const payload = {
-        ...form,
-        grupo_id: form.grupo_id || null,
-        precios: form.precios.filter((p) => p.precio_usd !== '' && Number(p.precio_usd) > 0),
-      }
+      const payload = { ...form, grupo_id: form.grupo_id || null }
       if (isEdit) await updateProducto(productoId, payload)
       else await createProducto(payload)
       toast.success(isEdit ? 'Producto actualizado' : 'Producto creado')
@@ -102,25 +76,6 @@ export default function ProductoModal({ open, onClose, productoId, onSaved }) {
               {grupos.map((g) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
             </select>
           </div>
-
-          {listas.length > 0 && (
-            <div>
-              <label className={lbl}>Precios por bulto (USD)</label>
-              <div className="space-y-2">
-                {listas.map((l) => (
-                  <div key={l.id} className="flex items-center gap-3">
-                    <span className="text-sm text-gray-600 flex-1">{l.nombre}</span>
-                    <input
-                      type="number" step="0.01" min="0" placeholder="0.00"
-                      className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      value={getPrecio(l.id)}
-                      onChange={(e) => setPrecio(l.id, e.target.value)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="flex justify-end gap-3 pt-2 border-t">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">

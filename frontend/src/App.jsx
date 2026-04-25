@@ -4,58 +4,117 @@ import { TooltipProvider } from './components/ui/Tooltip'
 import { AuthProvider } from './context/AuthContext'
 import RequireAuth from './components/RequireAuth'
 import Layout from './components/Layout'
+
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import Clientes from './pages/Clientes'
-import ClienteDetalle from './pages/ClienteDetalle'
-import Productos from './pages/Productos'
-import Ordenes from './pages/Ordenes'
-import ReportesVenta from './pages/ReportesVenta'
-import ReporteVentaDetalle from './pages/ReporteVentaDetalle'
-import Devoluciones from './pages/Devoluciones'
-import Stock from './pages/Stock'
-import InventarioCentral from './pages/InventarioCentral'
-import Configuracion from './pages/Configuracion'
-import Usuarios from './pages/Usuarios'
-import MisOrdenes from './pages/MisOrdenes'
 import NotFound from './pages/NotFound'
+import Dashboard from './pages/Dashboard'
+import Tiendas from './pages/Tiendas'
+import TiendaDetalle from './pages/TiendaDetalle'
+import Productos from './pages/Productos'
+import Lotes from './pages/Lotes'
+import Pedidos from './pages/Pedidos'
+import MiRuta from './pages/MiRuta'
+import Entregas from './pages/Entregas'
+import SolicitudesGeoref from './pages/SolicitudesGeoref'
+import Usuarios from './pages/Usuarios'
+import Configuracion from './pages/Configuracion'
+
+const ALL = ['admin', 'vendedor', 'facturacion', 'almacenista', 'chofer']
 
 export default function App() {
   return (
     <BrowserRouter>
       <Toaster position="top-right" richColors closeButton />
       <TooltipProvider>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/"
-            element={
-              <RequireAuth>
-                <Layout />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            {/* Admin routes */}
-            <Route path="dashboard" element={<RequireAuth role="admin"><Dashboard /></RequireAuth>} />
-            <Route path="clientes" element={<RequireAuth role="admin"><Clientes /></RequireAuth>} />
-            <Route path="clientes/:id" element={<RequireAuth role="admin"><ClienteDetalle /></RequireAuth>} />
-            <Route path="productos" element={<RequireAuth role="admin"><Productos /></RequireAuth>} />
-            <Route path="ordenes" element={<RequireAuth role="admin"><Ordenes /></RequireAuth>} />
-            <Route path="reportes-venta" element={<RequireAuth role="admin"><ReportesVenta /></RequireAuth>} />
-            <Route path="reportes-venta/:id" element={<RequireAuth role="admin"><ReporteVentaDetalle /></RequireAuth>} />
-            <Route path="devoluciones" element={<RequireAuth role="admin"><Devoluciones /></RequireAuth>} />
-            <Route path="stock" element={<RequireAuth role="admin"><Stock /></RequireAuth>} />
-            <Route path="inventario" element={<RequireAuth role="admin"><InventarioCentral /></RequireAuth>} />
-            <Route path="configuracion" element={<RequireAuth role="admin"><Configuracion /></RequireAuth>} />
-            <Route path="usuarios" element={<RequireAuth role="admin"><Usuarios /></RequireAuth>} />
-            {/* Client routes */}
-            <Route path="mis-ordenes" element={<MisOrdenes />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </AuthProvider>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <RequireAuth>
+                  <Layout />
+                </RequireAuth>
+              }
+            >
+              <Route index element={<Navigate to="/dashboard" replace />} />
+
+              {/* Admin + almacenista */}
+              <Route path="dashboard" element={
+                <RequireAuth roles={['admin', 'almacenista']}>
+                  <Dashboard />
+                </RequireAuth>
+              } />
+
+              {/* Tiendas — all roles */}
+              <Route path="tiendas" element={
+                <RequireAuth roles={ALL}>
+                  <Tiendas />
+                </RequireAuth>
+              } />
+              <Route path="tiendas/:id" element={
+                <RequireAuth roles={ALL}>
+                  <TiendaDetalle />
+                </RequireAuth>
+              } />
+
+              {/* Productos */}
+              <Route path="productos" element={
+                <RequireAuth roles={['admin', 'vendedor', 'almacenista', 'chofer']}>
+                  <Productos />
+                </RequireAuth>
+              } />
+
+              {/* Inventario / Lotes */}
+              <Route path="inventario" element={
+                <RequireAuth roles={['admin', 'almacenista']}>
+                  <Lotes />
+                </RequireAuth>
+              } />
+
+              {/* Pedidos */}
+              <Route path="pedidos" element={
+                <RequireAuth roles={['admin', 'vendedor', 'facturacion', 'almacenista']}>
+                  <Pedidos />
+                </RequireAuth>
+              } />
+
+              {/* Mi ruta (chofer) */}
+              <Route path="mi-ruta" element={
+                <RequireAuth roles={['chofer', 'admin']}>
+                  <MiRuta />
+                </RequireAuth>
+              } />
+
+              {/* Entregas */}
+              <Route path="entregas" element={
+                <RequireAuth roles={['admin', 'almacenista', 'chofer']}>
+                  <Entregas />
+                </RequireAuth>
+              } />
+
+              {/* Solicitudes GPS */}
+              <Route path="solicitudes-georef" element={
+                <RequireAuth roles={['admin']}>
+                  <SolicitudesGeoref />
+                </RequireAuth>
+              } />
+
+              {/* Admin only */}
+              <Route path="usuarios" element={
+                <RequireAuth roles={['admin']}>
+                  <Usuarios />
+                </RequireAuth>
+              } />
+              <Route path="configuracion" element={
+                <RequireAuth roles={['admin']}>
+                  <Configuracion />
+                </RequireAuth>
+              } />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </TooltipProvider>
     </BrowserRouter>
   )

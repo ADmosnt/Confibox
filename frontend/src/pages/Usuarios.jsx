@@ -1,20 +1,37 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { getUsuarios, createUsuario, updateUsuario, deleteUsuario, getClientes } from '../api'
+import { getUsuarios, createUsuario, updateUsuario } from '../api'
 import { Dialog, DialogContent } from '../components/ui/Dialog'
 import Alert from '../components/Alert'
 
-function UsuarioModal({ open, onClose, onSaved, clientes }) {
+const ROLES = [
+  { value: 'admin',       label: 'Administrador' },
+  { value: 'vendedor',    label: 'Vendedor' },
+  { value: 'facturacion', label: 'Facturación' },
+  { value: 'almacenista', label: 'Almacenista' },
+  { value: 'chofer',      label: 'Chofer' },
+]
+
+const ROL_BADGE = {
+  admin:       'bg-purple-100 text-purple-700',
+  vendedor:    'bg-blue-100 text-blue-700',
+  facturacion: 'bg-yellow-100 text-yellow-700',
+  almacenista: 'bg-green-100 text-green-700',
+  chofer:      'bg-orange-100 text-orange-700',
+}
+
+const ROL_LABEL = Object.fromEntries(ROLES.map((r) => [r.value, r.label]))
+
+function UsuarioModal({ open, onClose, onSaved }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [rol, setRol] = useState('cliente')
-  const [clienteId, setClienteId] = useState('')
+  const [rol, setRol] = useState('vendedor')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setUsername(''); setPassword(''); setRol('cliente'); setClienteId(''); setError('')
+    setUsername(''); setPassword(''); setRol('vendedor'); setError('')
   }, [open])
 
   const submit = async (e) => {
@@ -22,12 +39,7 @@ function UsuarioModal({ open, onClose, onSaved, clientes }) {
     setError('')
     setLoading(true)
     try {
-      await createUsuario({
-        username,
-        password,
-        rol,
-        cliente_id: rol === 'cliente' ? Number(clienteId) : null,
-      })
+      await createUsuario({ username, password, rol })
       toast.success(`Usuario "${username}" creado`)
       onSaved()
       onClose()
@@ -57,19 +69,9 @@ function UsuarioModal({ open, onClose, onSaved, clientes }) {
           <div>
             <label className={lbl}>Rol</label>
             <select className={inp} value={rol} onChange={(e) => setRol(e.target.value)}>
-              <option value="cliente">Cliente</option>
-              <option value="admin">Administrador</option>
+              {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
-          {rol === 'cliente' && (
-            <div>
-              <label className={lbl}>Cliente asociado *</label>
-              <select className={inp} value={clienteId} onChange={(e) => setClienteId(e.target.value)} required={rol === 'cliente'}>
-                <option value="">Seleccionar cliente...</option>
-                {clientes.map((c) => <option key={c.id} value={c.id}>{c.razon_social}</option>)}
-              </select>
-            </div>
-          )}
           <div className="flex justify-end gap-3 pt-2 border-t">
             <button type="button" onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50">
               Cancelar
@@ -86,7 +88,6 @@ function UsuarioModal({ open, onClose, onSaved, clientes }) {
 
 export default function Usuarios() {
   const [usuarios, setUsuarios] = useState([])
-  const [clientes, setClientes] = useState([])
   const [modalOpen, setModalOpen] = useState(false)
 
   const load = () =>
@@ -94,10 +95,7 @@ export default function Usuarios() {
       .then((r) => setUsuarios(r.data))
       .catch(() => toast.error('Error al cargar usuarios'))
 
-  useEffect(() => {
-    load()
-    getClientes({ activo: true }).then((r) => setClientes(r.data)).catch(() => {})
-  }, [])
+  useEffect(() => { load() }, [])
 
   const toggleActivo = async (u) => {
     try {
@@ -109,9 +107,15 @@ export default function Usuarios() {
     }
   }
 
-  const rolBadge = {
-    admin: 'bg-purple-100 text-purple-700',
-    cliente: 'bg-blue-100 text-blue-700',
+  const cambiarRol = async (u, nuevoRol) => {
+    if (nuevoRol === u.rol) return
+    try {
+      await updateUsuario(u.id, { rol: nuevoRol })
+      toast.success(`Rol de "${u.username}" actualizado`)
+      load()
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al actualizar rol')
+    }
   }
 
   return (
@@ -132,7 +136,6 @@ export default function Usuarios() {
             <tr>
               <th className="px-4 py-3 text-left">Usuario</th>
               <th className="px-4 py-3 text-left">Rol</th>
-              <th className="px-4 py-3 text-left">Cliente</th>
               <th className="px-4 py-3 text-center">Estado</th>
               <th className="px-4 py-3 text-center">Acciones</th>
             </tr>
@@ -142,11 +145,14 @@ export default function Usuarios() {
               <tr key={u.id} className={`hover:bg-gray-50 ${!u.activo ? 'opacity-50' : ''}`}>
                 <td className="px-4 py-3 font-medium font-mono">{u.username}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${rolBadge[u.rol] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {u.rol}
-                  </span>
+                  <select
+                    value={u.rol}
+                    onChange={(e) => cambiarRol(u, e.target.value)}
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer ${ROL_BADGE[u.rol] ?? 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
                 </td>
-                <td className="px-4 py-3 text-gray-600">{u.cliente_nombre ?? '—'}</td>
                 <td className="px-4 py-3 text-center">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${u.activo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {u.activo ? 'Activo' : 'Inactivo'}
@@ -164,19 +170,14 @@ export default function Usuarios() {
             ))}
             {usuarios.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-400">No hay usuarios registrados</td>
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-400">No hay usuarios registrados</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <UsuarioModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSaved={load}
-        clientes={clientes}
-      />
+      <UsuarioModal open={modalOpen} onClose={() => setModalOpen(false)} onSaved={load} />
     </div>
   )
 }

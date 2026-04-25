@@ -1,28 +1,56 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import GlobalSearch from './GlobalSearch'
 
-const adminNav = [
-  { to: '/dashboard', label: 'Dashboard' },
-  { to: '/clientes', label: 'Clientes' },
-  { to: '/productos', label: 'Productos' },
-  { to: '/inventario', label: 'Inventario Central' },
-  { to: '/ordenes', label: 'Órdenes / Historial' },
-  { to: '/devoluciones', label: 'Devoluciones' },
-  { to: '/stock', label: 'Stock en Consignación' },
-]
+const NAV = {
+  admin: [
+    { to: '/dashboard',        label: 'Dashboard' },
+    { to: '/tiendas',          label: 'Tiendas' },
+    { to: '/productos',        label: 'Productos' },
+    { to: '/inventario',       label: 'Inventario' },
+    { to: '/pedidos',          label: 'Pedidos' },
+    { to: '/entregas',         label: 'Entregas' },
+    { to: '/solicitudes-georef', label: 'Solicitudes GPS' },
+  ],
+  vendedor: [
+    { to: '/tiendas',   label: 'Tiendas' },
+    { to: '/pedidos',   label: 'Mis Pedidos' },
+    { to: '/productos', label: 'Catálogo' },
+  ],
+  facturacion: [
+    { to: '/pedidos', label: 'Pedidos' },
+  ],
+  almacenista: [
+    { to: '/inventario', label: 'Inventario' },
+    { to: '/pedidos',    label: 'Pedidos' },
+  ],
+  chofer: [
+    { to: '/mi-ruta',  label: 'Mi Ruta' },
+    { to: '/entregas', label: 'Mis Entregas' },
+  ],
+}
 
-const clienteNav = [
-  { to: '/mis-ordenes', label: 'Mis Órdenes' },
-]
+const BOTTOM_NAV = {
+  admin: [
+    { to: '/usuarios',      label: 'Usuarios' },
+    { to: '/configuracion', label: 'Configuración' },
+  ],
+}
 
-const navLinkClass = ({ isActive }) =>
+const navCls = ({ isActive }) =>
   `block px-4 py-2.5 text-sm transition-colors ${
     isActive
       ? 'bg-blue-600 text-white'
       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
   }`
+
+const ROL_LABEL = {
+  admin:        'Administrador',
+  vendedor:     'Vendedor',
+  facturacion:  'Facturación',
+  almacenista:  'Almacén',
+  chofer:       'Chofer',
+}
 
 export default function Layout() {
   const [open, setOpen] = useState(false)
@@ -30,8 +58,8 @@ export default function Layout() {
   const navigate = useNavigate()
   const close = () => setOpen(false)
 
-  const isAdmin = user?.rol === 'admin'
-  const navItems = isAdmin ? adminNav : clienteNav
+  const mainNav   = NAV[user?.rol] ?? []
+  const bottomNav = BOTTOM_NAV[user?.rol] ?? []
 
   const handleLogout = () => {
     logout()
@@ -53,29 +81,32 @@ export default function Layout() {
         `}
       >
         <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <h1 className="text-base font-bold leading-tight">
-            Sistema de<br />Consignación
-          </h1>
-          <button className="md:hidden text-gray-400 hover:text-white text-lg leading-none" onClick={close}>✕</button>
+          <div>
+            <h1 className="text-base font-bold leading-tight">Confibox</h1>
+            <p className="text-xs text-gray-400 mt-0.5">{ROL_LABEL[user?.rol]}</p>
+          </div>
+          <button
+            className="md:hidden text-gray-400 hover:text-white text-lg leading-none"
+            onClick={close}
+          >
+            ✕
+          </button>
         </div>
 
-        {isAdmin && <GlobalSearch onNavigate={close} />}
-
         <nav className="flex-1 overflow-y-auto py-2">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className={navLinkClass} onClick={close}>
+          {mainNav.map((item) => (
+            <NavLink key={item.to} to={item.to} className={navCls} onClick={close}>
               {item.label}
             </NavLink>
           ))}
         </nav>
 
         <div className="border-t border-gray-700">
-          {isAdmin && (
-            <>
-              <NavLink to="/usuarios" className={navLinkClass} onClick={close}>Usuarios</NavLink>
-              <NavLink to="/configuracion" className={navLinkClass} onClick={close}>Configuración</NavLink>
-            </>
-          )}
+          {bottomNav.map((item) => (
+            <NavLink key={item.to} to={item.to} className={navCls} onClick={close}>
+              {item.label}
+            </NavLink>
+          ))}
           <div className="px-4 py-3 flex items-center justify-between">
             <span className="text-xs text-gray-400 truncate">{user?.username}</span>
             <button
@@ -91,10 +122,14 @@ export default function Layout() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 flex-shrink-0">
-          <button onClick={() => setOpen(true)} className="text-gray-600 hover:text-gray-900 text-xl leading-none" aria-label="Abrir menú">
+          <button
+            onClick={() => setOpen(true)}
+            className="text-gray-600 hover:text-gray-900 text-xl leading-none"
+            aria-label="Abrir menú"
+          >
             ☰
           </button>
-          <span className="font-semibold text-gray-800 text-sm">Sistema de Consignación</span>
+          <span className="font-semibold text-gray-800 text-sm">Confibox</span>
         </header>
 
         <main className="flex-1 overflow-y-auto">

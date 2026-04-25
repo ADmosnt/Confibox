@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { HelpTooltip } from '../components/ui/Tooltip'
 import {
   getConfig, updateConfig,
-  getTasas, saveTasa, scrapeTasa,
   getZonas, createZona, updateZona, deleteZona,
-  getGruposClientes, createGrupoCliente, updateGrupoCliente, deleteGrupoCliente,
   getGruposProductos, createGrupoProducto, updateGrupoProducto, deleteGrupoProducto,
-  getListasPrecios, createListaPrecio, updateListaPrecio, deleteListaPrecio,
 } from '../api'
 
 function CatalogSection({ title, items, onCreate, onUpdate, onDelete }) {
@@ -66,22 +62,13 @@ function CatalogSection({ title, items, onCreate, onUpdate, onDelete }) {
 
 export default function Configuracion() {
   const [config, setConfig] = useState({ nombre: '', rif: '', direccion: '', ciudad: '' })
-  const [tasas, setTasas] = useState([])
-  const [tasaFecha, setTasaFecha] = useState(new Date().toISOString().slice(0, 10))
-  const [tasaValor, setTasaValor] = useState('')
   const [zonas, setZonas] = useState([])
-  const [gruposClientes, setGruposClientes] = useState([])
   const [gruposProductos, setGruposProductos] = useState([])
-  const [listasPrecios, setListasPrecios] = useState([])
-  const [scraping, setScraping] = useState(false)
 
   const loadAll = () => {
     getConfig().then((r) => setConfig(r.data))
-    getTasas().then((r) => setTasas(r.data))
     getZonas().then((r) => setZonas(r.data))
-    getGruposClientes().then((r) => setGruposClientes(r.data))
     getGruposProductos().then((r) => setGruposProductos(r.data))
-    getListasPrecios().then((r) => setListasPrecios(r.data))
   }
   useEffect(() => { loadAll() }, [])
 
@@ -95,31 +82,6 @@ export default function Configuracion() {
     }
   }
 
-  const saveTasaHandler = async () => {
-    if (!tasaValor) return
-    try {
-      await saveTasa({ fecha: tasaFecha, valor: Number(tasaValor) })
-      setTasaValor('')
-      getTasas().then((r) => setTasas(r.data))
-      toast.success('Tasa guardada')
-    } catch {
-      toast.error('Error al guardar la tasa')
-    }
-  }
-
-  const handleScrape = async () => {
-    setScraping(true)
-    try {
-      const r = await scrapeTasa()
-      getTasas().then((d) => setTasas(d.data))
-      toast.success(`Tasa obtenida del BCV: Bs. ${Number(r.data.valor).toFixed(4)}`)
-    } catch {
-      toast.error('No se pudo obtener la tasa del BCV. Ingrésela manualmente.')
-    } finally {
-      setScraping(false)
-    }
-  }
-
   const inp = 'w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
@@ -127,7 +89,6 @@ export default function Configuracion() {
       <h2 className="text-xl font-bold text-gray-800 mb-6">Configuración</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Empresa */}
         <div className="bg-white rounded-lg shadow p-5">
           <h3 className="font-semibold text-gray-700 mb-4">Datos de la empresa</h3>
           <form onSubmit={saveConfig} className="space-y-3">
@@ -151,71 +112,16 @@ export default function Configuracion() {
           </form>
         </div>
 
-        {/* Tasas BCV */}
-        <div className="bg-white rounded-lg shadow p-5">
-          <h3 className="font-semibold text-gray-700 mb-4 flex items-center">
-            Tasa BCV
-            <HelpTooltip text="El sistema usa automáticamente la tasa más reciente para calcular los totales en bolívares. Si no hay tasa registrada para el día de hoy, usa la última disponible." side="right" />
-          </h3>
-          <div className="space-y-3 mb-4">
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <input type="date" className="border border-gray-300 rounded px-2 py-1.5 text-sm w-full sm:w-auto"
-                value={tasaFecha} onChange={(e) => setTasaFecha(e.target.value)} />
-              <input type="number" step="0.0001" min={0} placeholder="Bs. por USD"
-                className="border border-gray-300 rounded px-2 py-1.5 text-sm w-full sm:flex-1"
-                value={tasaValor} onChange={(e) => setTasaValor(e.target.value)} />
-              <button onClick={saveTasaHandler} className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded hover:bg-blue-700 w-full sm:w-auto shrink-0">
-                Guardar
-              </button>
-            </div>
-            <button onClick={handleScrape} disabled={scraping}
-              className="w-full border border-blue-300 text-blue-600 text-sm py-2 rounded hover:bg-blue-50 disabled:opacity-50">
-              {scraping ? 'Consultando BCV...' : '↻ Obtener tasa del BCV automáticamente'}
-            </button>
-          </div>
-          <div className="overflow-y-auto max-h-48 border rounded">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50 text-gray-500 uppercase sticky top-0">
-                <tr>
-                  <th className="px-3 py-2 text-left">Fecha</th>
-                  <th className="px-3 py-2 text-right">Bs./USD</th>
-                  <th className="px-3 py-2 text-center">Fuente</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {tasas.map((t) => (
-                  <tr key={t.id}>
-                    <td className="px-3 py-2">{t.fecha}</td>
-                    <td className="px-3 py-2 text-right font-mono">{Number(t.valor).toFixed(4)}</td>
-                    <td className="px-3 py-2 text-center text-gray-500">{t.fuente}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Catálogos */}
-        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-4">
           <CatalogSection title="Zonas" items={zonas}
             onCreate={async (d) => { await createZona(d); getZonas().then((r) => setZonas(r.data)) }}
             onUpdate={async (id, d) => { await updateZona(id, d); getZonas().then((r) => setZonas(r.data)) }}
             onDelete={async (id) => { await deleteZona(id); getZonas().then((r) => setZonas(r.data)) }}
           />
-          <CatalogSection title="Grupos de clientes" items={gruposClientes}
-            onCreate={async (d) => { await createGrupoCliente(d); getGruposClientes().then((r) => setGruposClientes(r.data)) }}
-            onUpdate={async (id, d) => { await updateGrupoCliente(id, d); getGruposClientes().then((r) => setGruposClientes(r.data)) }}
-            onDelete={async (id) => { await deleteGrupoCliente(id); getGruposClientes().then((r) => setGruposClientes(r.data)) }}
-          />
           <CatalogSection title="Grupos de productos" items={gruposProductos}
             onCreate={async (d) => { await createGrupoProducto(d); getGruposProductos().then((r) => setGruposProductos(r.data)) }}
             onUpdate={async (id, d) => { await updateGrupoProducto(id, d); getGruposProductos().then((r) => setGruposProductos(r.data)) }}
             onDelete={async (id) => { await deleteGrupoProducto(id); getGruposProductos().then((r) => setGruposProductos(r.data)) }}
-          />
-          <CatalogSection title="Listas de precios" items={listasPrecios}
-            onCreate={async (d) => { await createListaPrecio(d); getListasPrecios().then((r) => setListasPrecios(r.data)) }}
-            onUpdate={async (id, d) => { await updateListaPrecio(id, d); getListasPrecios().then((r) => setListasPrecios(r.data)) }}
-            onDelete={async (id) => { await deleteListaPrecio(id); getListasPrecios().then((r) => setListasPrecios(r.data)) }}
           />
         </div>
       </div>

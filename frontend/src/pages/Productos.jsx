@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { getProductos, deleteProducto, reactivarProducto, getGruposProductos } from '../api'
-import PageHeader from '../components/PageHeader'
 import ProductoModal from '../components/ProductoModal'
-import ActualizacionPreciosModal from '../components/ActualizacionPreciosModal'
 
 export default function Productos() {
   const [productos, setProductos] = useState([])
@@ -16,7 +14,6 @@ export default function Productos() {
   const [grupoId, setGrupoId] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [editId, setEditId] = useState(null)
-  const [preciosModalOpen, setPreciosModalOpen] = useState(false)
   const [showDesactivados, setShowDesactivados] = useState(false)
 
   useEffect(() => { setSearch(urlSearch) }, [urlSearch])
@@ -61,23 +58,14 @@ export default function Productos() {
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h2 className="text-xl font-bold text-gray-800">Productos</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setPreciosModalOpen(true)}
-            className="border border-blue-400 text-blue-600 hover:bg-blue-50 text-sm font-medium px-4 py-2 rounded-md"
-          >
-            Actualizar precios masivo
-          </button>
-          <button
-            onClick={openNew}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md"
-          >
-            + Nuevo producto
-          </button>
-        </div>
+        <button
+          onClick={openNew}
+          className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md"
+        >
+          + Nuevo producto
+        </button>
       </div>
 
-      {/* Active products */}
       <div className="bg-white rounded-lg shadow mb-4">
         <div className="p-4 border-b flex flex-wrap gap-3">
           <input
@@ -104,7 +92,6 @@ export default function Productos() {
                 <th className="px-4 py-3 text-left">Descripción</th>
                 <th className="px-4 py-3 text-left">Grupo</th>
                 <th className="px-4 py-3 text-center">Uds/Bulto</th>
-                <th className="px-4 py-3 text-left">Precios (USD)</th>
                 <th className="px-4 py-3 text-center">Acciones</th>
               </tr>
             </thead>
@@ -113,15 +100,8 @@ export default function Productos() {
                 <tr key={p.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-mono text-xs">{p.codigo}</td>
                   <td className="px-4 py-3 font-medium">{p.descripcion}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.grupo}</td>
+                  <td className="px-4 py-3 text-gray-600">{p.grupo ?? '—'}</td>
                   <td className="px-4 py-3 text-center">{p.unidades_por_bulto}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">
-                    {p.precios?.map((pr) => (
-                      <span key={pr.lista_id} className="inline-block mr-2">
-                        {pr.lista}: ${(Number(pr.precio_usd) * (p.unidades_por_bulto || 1)).toFixed(2)}
-                      </span>
-                    ))}
-                  </td>
                   <td className="px-4 py-3 text-center space-x-2">
                     <button onClick={() => openEdit(p.id)} className="text-blue-600 hover:underline text-xs">Editar</button>
                     <button onClick={() => handleDelete(p.id, p.descripcion)} className="text-red-500 hover:underline text-xs">Desactivar</button>
@@ -130,7 +110,7 @@ export default function Productos() {
               ))}
               {productos.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-400">No hay productos registrados</td>
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">No hay productos registrados</td>
                 </tr>
               )}
             </tbody>
@@ -138,16 +118,13 @@ export default function Productos() {
         </div>
       </div>
 
-      {/* Deactivated products toggle */}
       {desactivados.length > 0 && (
         <div className="bg-white rounded-lg shadow">
           <button
             onClick={() => setShowDesactivados((v) => !v)}
             className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-500 hover:bg-gray-50 rounded-lg"
           >
-            <span className="font-medium">
-              Productos desactivados ({desactivados.length})
-            </span>
+            <span className="font-medium">Productos desactivados ({desactivados.length})</span>
             <span>{showDesactivados ? '▲' : '▼'}</span>
           </button>
           {showDesactivados && (
@@ -167,7 +144,7 @@ export default function Productos() {
                     <tr key={p.id} className="bg-gray-50 opacity-75">
                       <td className="px-4 py-3 font-mono text-xs text-gray-400">{p.codigo}</td>
                       <td className="px-4 py-3 text-gray-500 line-through">{p.descripcion}</td>
-                      <td className="px-4 py-3 text-gray-400">{p.grupo}</td>
+                      <td className="px-4 py-3 text-gray-400">{p.grupo ?? '—'}</td>
                       <td className="px-4 py-3 text-center text-gray-400">{p.unidades_por_bulto}</td>
                       <td className="px-4 py-3 text-center">
                         <button
@@ -190,11 +167,6 @@ export default function Productos() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         productoId={editId}
-        onSaved={load}
-      />
-      <ActualizacionPreciosModal
-        open={preciosModalOpen}
-        onClose={() => setPreciosModalOpen(false)}
         onSaved={load}
       />
     </div>
