@@ -15,6 +15,17 @@ def list_usuarios():
     return jsonify([u.to_dict() for u in usuarios])
 
 
+@bp.route('/by-rol', methods=['GET'])
+@require_role('admin', 'vendedor', 'almacenista')
+def list_by_rol():
+    """Lite list of active users filtered by rol — used by forms (chofer/vendedor selectors)."""
+    rol = request.args.get('rol')
+    if rol not in ROLES_VALIDOS:
+        return jsonify({'error': f"rol debe ser uno de: {', '.join(ROLES_VALIDOS)}"}), 400
+    usuarios = Usuario.query.filter_by(rol=rol, activo=True).order_by(Usuario.username).all()
+    return jsonify([{'id': u.id, 'username': u.username} for u in usuarios])
+
+
 @bp.route('', methods=['POST'])
 @require_role('admin')
 def create_usuario():

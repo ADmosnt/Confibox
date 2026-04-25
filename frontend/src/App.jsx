@@ -10,9 +10,12 @@ import NotFound from './pages/NotFound'
 import Dashboard from './pages/Dashboard'
 import Tiendas from './pages/Tiendas'
 import TiendaDetalle from './pages/TiendaDetalle'
+import TiendaForm from './pages/TiendaForm'
 import Productos from './pages/Productos'
 import Lotes from './pages/Lotes'
 import Pedidos from './pages/Pedidos'
+import PedidoDetalle from './pages/PedidoDetalle'
+import PedidoForm from './pages/PedidoForm'
 import MiRuta from './pages/MiRuta'
 import Entregas from './pages/Entregas'
 import SolicitudesGeoref from './pages/SolicitudesGeoref'
@@ -52,9 +55,19 @@ export default function App() {
                   <Tiendas />
                 </RequireAuth>
               } />
+              <Route path="tiendas/nueva" element={
+                <RequireAuth roles={['admin', 'vendedor']}>
+                  <TiendaForm />
+                </RequireAuth>
+              } />
               <Route path="tiendas/:id" element={
                 <RequireAuth roles={ALL}>
                   <TiendaDetalle />
+                </RequireAuth>
+              } />
+              <Route path="tiendas/:id/editar" element={
+                <RequireAuth roles={['admin', 'vendedor']}>
+                  <TiendaForm />
                 </RequireAuth>
               } />
 
@@ -76,6 +89,16 @@ export default function App() {
               <Route path="pedidos" element={
                 <RequireAuth roles={['admin', 'vendedor', 'facturacion', 'almacenista']}>
                   <Pedidos />
+                </RequireAuth>
+              } />
+              <Route path="pedidos/nuevo" element={
+                <RequireAuth roles={['admin', 'vendedor']}>
+                  <PedidoForm />
+                </RequireAuth>
+              } />
+              <Route path="pedidos/:id" element={
+                <RequireAuth roles={['admin', 'vendedor', 'facturacion', 'almacenista']}>
+                  <PedidoDetalle />
                 </RequireAuth>
               } />
 

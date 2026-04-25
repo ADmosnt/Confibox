@@ -95,6 +95,7 @@ export const rechazarSolicitud = (id) => api.put(`/solicitudes-georef/${id}/rech
 
 // ── Usuarios ───────────────────────────────────────────────────────────────
 export const getUsuarios = () => api.get('/usuarios')
+export const getUsuariosByRol = (rol) => api.get('/usuarios/by-rol', { params: { rol } })
 export const createUsuario = (data) => api.post('/usuarios', data)
 export const updateUsuario = (id, data) => api.put(`/usuarios/${id}`, data)
 export const deleteUsuario = (id) => api.delete(`/usuarios/${id}`)

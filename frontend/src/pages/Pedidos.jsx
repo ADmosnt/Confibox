@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { getPedidos, facturarPedido, anularPedido } from '../api'
 import { EstadoBadge } from './Dashboard'
@@ -54,10 +55,21 @@ export default function Pedidos() {
 
   const canFacturar = user?.rol === 'facturacion' || user?.rol === 'admin'
   const canAnular   = user?.rol === 'admin'
+  const canCrear    = ['admin', 'vendedor'].includes(user?.rol)
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-gray-800 mb-5">Pedidos</h2>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <h2 className="text-xl font-bold text-gray-800">Pedidos</h2>
+        {canCrear && (
+          <Link
+            to="/pedidos/nuevo"
+            className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg font-medium"
+          >
+            + Nuevo pedido
+          </Link>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-3 mb-5">
         <select
@@ -90,7 +102,9 @@ export default function Pedidos() {
             <tbody className="divide-y divide-gray-100">
               {pedidos.map((p) => (
                 <tr key={p.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-blue-600 text-xs">{p.numero_pedido}</td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    <Link to={`/pedidos/${p.id}`} className="text-blue-600 hover:underline">{p.numero_pedido}</Link>
+                  </td>
                   <td className="px-4 py-3 font-medium">{p.tienda}</td>
                   <td className="px-4 py-3 text-gray-500">{p.tienda_zona ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500">{p.vendedor ?? '—'}</td>

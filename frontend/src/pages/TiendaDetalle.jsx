@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { getTienda } from '../api'
 import MapaTiendas from '../components/MapaTiendas'
+import { useAuth } from '../context/AuthContext'
 
 const EMPRESA_CHIP = {
   confibox: 'bg-blue-100 text-blue-700',
@@ -13,8 +14,10 @@ const EMPRESA_LABEL = { confibox: 'Confibox', actual: 'Actual', ambos: 'Ambos' }
 
 export default function TiendaDetalle() {
   const { id } = useParams()
+  const { user } = useAuth()
   const [tienda, setTienda] = useState(null)
   const [loading, setLoading] = useState(true)
+  const canEdit = ['admin', 'vendedor'].includes(user?.rol)
 
   useEffect(() => {
     getTienda(id)
@@ -28,10 +31,20 @@ export default function TiendaDetalle() {
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
-        <Link to="/tiendas" className="text-blue-600 text-sm hover:underline">← Tiendas</Link>
-        <span className="text-gray-400">/</span>
-        <h2 className="text-xl font-bold text-gray-800">{tienda.razon_social}</h2>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <Link to="/tiendas" className="text-blue-600 text-sm hover:underline">← Tiendas</Link>
+          <span className="text-gray-400">/</span>
+          <h2 className="text-xl font-bold text-gray-800">{tienda.razon_social}</h2>
+        </div>
+        {canEdit && (
+          <Link
+            to={`/tiendas/${id}/editar`}
+            className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg"
+          >
+            Editar
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
