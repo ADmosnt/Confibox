@@ -6,7 +6,7 @@ class Usuario(db.Model):
     __tablename__ = 'usuarios'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
+    password_hash = db.Column(db.String(512), nullable=False)
     # admin | vendedor | facturacion | almacenista | chofer
     rol = db.Column(db.String(20), nullable=False, default='admin')
     activo = db.Column(db.Boolean, default=True)

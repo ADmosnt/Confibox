@@ -4,43 +4,130 @@ Seed script — inserta datos de prueba en la base de datos.
 Uso:
   python seed.py           # inserta todo
   python seed.py --clear   # borra datos existentes y vuelve a insertar
+  python seed.py --check   # solo verifica si los usuarios de prueba existen
+  python seed.py --reset-passwords  # resetea contraseñas de usuarios de prueba a pass1234
 
-En Railway:
-  railway run python seed.py
+Asegúrate de tener DATABASE_URL apuntando a la BD correcta antes de correr:
+  Linux/Mac:   export DATABASE_URL="postgresql://user:pass@host:port/db"
+  PowerShell:  $env:DATABASE_URL = "postgresql://user:pass@host:port/db"
+  CMD:         set DATABASE_URL=postgresql://user:pass@host:port/db
 """
 import os
 import sys
 import datetime
+import traceback
+
+# ── DB URL ─────────────────────────────────────────────────────────────────────
+raw_url = os.environ.get('DATABASE_URL', '')
+if not raw_url:
+    print('⚠  DATABASE_URL no está definida. Usando BD local por defecto.')
+    raw_url = 'postgresql://appuser:dev@localhost:5432/consignacion'
+else:
+    # Mask password for display
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(raw_url)
+        masked = raw_url.replace(parsed.password or '', '***') if parsed.password else raw_url
+        print(f'🔗 Conectando a: {masked}')
+    except Exception:
+        print(f'🔗 DATABASE_URL está definida.')
+
+# Fix Railway's legacy postgres:// scheme
+if raw_url.startswith('postgres://'):
+    raw_url = raw_url.replace('postgres://', 'postgresql://', 1)
+    print('   (esquema postgres:// → postgresql:// corregido)')
+
+os.environ['DATABASE_URL'] = raw_url
 
 # ── App context ────────────────────────────────────────────────────────────────
-os.environ.setdefault('DATABASE_URL', 'postgresql://appuser:dev@localhost:5432/consignacion')
-
-from app import create_app, db
-from app.models import (
-    Usuario, Zona, Cliente, GrupoProducto, Producto, Lote,
-    Pedido, PedidoDetalle, EntregaDiaria,
-)
+try:
+    from app import create_app, db
+    from app.models import (
+        Usuario, Zona, Cliente, GrupoProducto, Producto, Lote,
+        Pedido, PedidoDetalle, EntregaDiaria,
+    )
+except ImportError as e:
+    print(f'\n❌ Error importando la app: {e}')
+    print('   Asegúrate de correr este script desde el directorio /backend')
+    sys.exit(1)
 
 app = create_app()
 
 CLEAR = '--clear' in sys.argv
+CHECK = '--check' in sys.argv
+RESET_PASSWORDS = '--reset-passwords' in sys.argv
+
+TEST_USERNAMES = ['vendedor1', 'facturacion1', 'almacenista1', 'chofer1', 'chofer2']
+TEST_PASSWORD = 'pass1234'
+
+
+def check_users():
+    """Verifica qué usuarios existen en la BD."""
+    with app.app_context():
+        print('\n─── Estado de usuarios en la BD ───────────────────────────')
+        all_users = Usuario.query.all()
+        print(f'   Total usuarios: {len(all_users)}')
+        for u in all_users:
+            hash_len = len(u.password_hash) if u.password_hash else 0
+            print(f'   {u.username:<20} rol={u.rol:<15} activo={u.activo}  hash_len={hash_len}')
+        print('───────────────────────────────────────────────────────────\n')
+
+        missing = [un for un in TEST_USERNAMES if not any(u.username == un for u in all_users)]
+        if missing:
+            print(f'⚠  Usuarios de prueba que NO existen: {", ".join(missing)}')
+            print('   Corre: python seed.py  para crearlos')
+        else:
+            print('✅ Todos los usuarios de prueba existen en la BD.')
+
+        # Verify passwords work
+        print('\n─── Verificando contraseñas ───────────────────────────────')
+        for u in all_users:
+            if u.username in TEST_USERNAMES:
+                ok = u.check_password(TEST_PASSWORD)
+                status = '✅' if ok else '❌'
+                print(f'   {status} {u.username} / {TEST_PASSWORD}  →  {"CORRECTO" if ok else "FALLA"}')
+        print('───────────────────────────────────────────────────────────\n')
+
+
+def reset_passwords():
+    """Resetea contraseñas de usuarios de prueba."""
+    with app.app_context():
+        updated = 0
+        for username in TEST_USERNAMES:
+            u = Usuario.query.filter_by(username=username).first()
+            if u:
+                u.set_password(TEST_PASSWORD)
+                print(f'   🔑 {username} → contraseña reseteada a {TEST_PASSWORD}')
+                updated += 1
+            else:
+                print(f'   ⚠  {username} no existe (corre python seed.py primero)')
+        db.session.commit()
+        print(f'\n✅ {updated} contraseñas reseteadas.')
 
 
 def seed():
     with app.app_context():
+        # Ensure tables exist
+        db.create_all()
+
         if CLEAR:
             print('🗑  Limpiando datos de prueba...')
-            EntregaDiaria.query.delete()
-            PedidoDetalle.query.delete()
-            Pedido.query.delete()
-            Lote.query.delete()
-            Cliente.query.filter(Cliente.codigo.like('TEST-%')).delete(synchronize_session=False)
-            Producto.query.filter(Producto.codigo.like('TEST-%')).delete(synchronize_session=False)
-            Usuario.query.filter(Usuario.username.in_([
-                'vendedor1', 'facturacion1', 'almacenista1', 'chofer1', 'chofer2'
-            ])).delete(synchronize_session=False)
-            db.session.commit()
-            print('   Listo.')
+            try:
+                EntregaDiaria.query.delete()
+                PedidoDetalle.query.delete()
+                Pedido.query.delete()
+                Lote.query.filter(Lote.numero_lote.in_([
+                    'L240101', 'L240215', 'L240301', 'L240201', 'L240115', 'L240320'
+                ])).delete(synchronize_session=False)
+                Cliente.query.filter(Cliente.codigo.like('TEST-%')).delete(synchronize_session=False)
+                Producto.query.filter(Producto.codigo.like('TEST-%')).delete(synchronize_session=False)
+                Usuario.query.filter(Usuario.username.in_(TEST_USERNAMES)).delete(synchronize_session=False)
+                db.session.commit()
+                print('   Listo.')
+            except Exception as e:
+                db.session.rollback()
+                print(f'❌ Error al limpiar: {e}')
+                raise
 
         # ── Usuarios ───────────────────────────────────────────────────────────
         print('👤 Creando usuarios...')
@@ -55,14 +142,19 @@ def seed():
         for username, rol in usuarios.items():
             u = Usuario.query.filter_by(username=username).first()
             if not u:
-                u = Usuario(username=username, rol=rol)
-                u.set_password('pass1234')
+                u = Usuario(username=username, rol=rol, activo=True)
+                u.set_password(TEST_PASSWORD)
                 db.session.add(u)
-                print(f'   + {username} ({rol})  →  pass1234')
+                print(f'   + {username} ({rol})')
             else:
                 print(f'   ↩  {username} ya existe')
             user_objs[username] = u
         db.session.flush()
+
+        # Verify IDs were assigned
+        for username, u in user_objs.items():
+            if u.id is None:
+                raise RuntimeError(f'Usuario {username} no tiene ID después de flush()')
 
         admin = Usuario.query.filter_by(rol='admin').first()
 
@@ -125,7 +217,7 @@ def seed():
         hoy = datetime.date.today()
         lotes_data = [
             ('TEST-001', 'L240101', 20, hoy + datetime.timedelta(days=90),  'A-01'),
-            ('TEST-001', 'L240215', 15, hoy + datetime.timedelta(days=12),  'A-01'),  # próximo a vencer
+            ('TEST-001', 'L240215', 15, hoy + datetime.timedelta(days=12),  'A-01'),
             ('TEST-002', 'L240301', 30, hoy + datetime.timedelta(days=180), 'A-02'),
             ('TEST-003', 'L240201', 25, hoy + datetime.timedelta(days=60),  'B-01'),
             ('TEST-004', 'L240115', 18, hoy + datetime.timedelta(days=45),  'B-02'),
@@ -150,7 +242,6 @@ def seed():
         # ── Tiendas ────────────────────────────────────────────────────────────
         print('🏪 Creando tiendas...')
         tiendas_data = [
-            # codigo, razon_social, zona, empresa, lat, lon, direccion, vendedor_key
             ('TEST-T01', 'Abasto La Esperanza',    'Charallave',          'confibox', 10.2423, -66.8756, 'Calle Principal, Charallave',        'vendedor1'),
             ('TEST-T02', 'Bodegón El Refresco',    'Ocumare del Tuy',     'actual',   10.2850, -66.7870, 'Av. Bolívar, Ocumare del Tuy',        'vendedor1'),
             ('TEST-T03', 'Supermercado El Valle',  'Los Valles del Tuy',  'ambos',    10.2190, -66.9140, 'Centro Comercial, Los Valles del Tuy', 'vendedor1'),
@@ -205,19 +296,16 @@ def seed():
 
         facturacion_user = user_objs['facturacion1']
 
-        # Pendiente — listo para que facturacion lo procese
         make_pedido('PED-2024-001', 'TEST-T01', 'pendiente', 'vendedor1', [
             ('TEST-001', 3, 0),
             ('TEST-003', 2, 5),
         ])
 
-        # Facturado — listo para que almacenista haga picking
         p_facturado = make_pedido('PED-2024-002', 'TEST-T02', 'facturado', 'vendedor1', [
             ('TEST-002', 5, 0),
             ('TEST-004', 2, 0),
         ], facturador=facturacion_user)
 
-        # En ruta — asignado al chofer1
         p_ruta = make_pedido('PED-2024-003', 'TEST-T03', 'en_ruta', 'vendedor1', [
             ('TEST-001', 2, 0),
             ('TEST-005', 1, 10),
@@ -225,7 +313,6 @@ def seed():
 
         db.session.flush()
 
-        # ── Entrega para el pedido en ruta ─────────────────────────────────────
         if p_ruta and not EntregaDiaria.query.filter_by(pedido_id=p_ruta.id).first():
             entrega = EntregaDiaria(
                 pedido_id=p_ruta.id,
@@ -239,12 +326,12 @@ def seed():
 
         print('\n✅ Seed completado.')
         print('\n─── Usuarios de prueba ────────────────────────────────')
-        print('  admin          / admin123  →  admin')
-        print('  vendedor1      / pass1234  →  vendedor')
-        print('  facturacion1   / pass1234  →  facturacion')
-        print('  almacenista1   / pass1234  →  almacenista')
-        print('  chofer1        / pass1234  →  chofer (tiene PED-2024-003 en ruta)')
-        print('  chofer2        / pass1234  →  chofer')
+        print(f'  admin          / admin123  →  admin')
+        print(f'  vendedor1      / {TEST_PASSWORD}  →  vendedor')
+        print(f'  facturacion1   / {TEST_PASSWORD}  →  facturacion')
+        print(f'  almacenista1   / {TEST_PASSWORD}  →  almacenista')
+        print(f'  chofer1        / {TEST_PASSWORD}  →  chofer (tiene PED-2024-003 en ruta)')
+        print(f'  chofer2        / {TEST_PASSWORD}  →  chofer')
         print('\n─── Pedidos creados ───────────────────────────────────')
         print('  PED-2024-001  pendiente   → Abasto La Esperanza (Charallave)')
         print('  PED-2024-002  facturado   → Bodegón El Refresco (Ocumare)')
@@ -254,4 +341,14 @@ def seed():
 
 
 if __name__ == '__main__':
-    seed()
+    try:
+        if CHECK:
+            check_users()
+        elif RESET_PASSWORDS:
+            reset_passwords()
+        else:
+            seed()
+    except Exception:
+        print('\n❌ El seed falló con el siguiente error:')
+        traceback.print_exc()
+        sys.exit(1)

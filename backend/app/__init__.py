@@ -159,6 +159,11 @@ def _run_migrations():
             "ALTER TABLE usuarios DROP COLUMN IF EXISTS cliente_id"
         ))
 
+        # Widen password_hash to accommodate scrypt hashes (werkzeug 3.x)
+        conn.execute(text(
+            "ALTER TABLE usuarios ALTER COLUMN password_hash TYPE VARCHAR(512)"
+        ))
+
         conn.commit()
 
 
