@@ -138,6 +138,7 @@ def checkin(id):
     entrega.estado = estado
     entrega.motivo_incidencia = motivo
     entrega.observacion = data.get('observacion')
+    entrega.foto_evidencia_url = data.get('foto_evidencia_url')
     entrega.hora_registro = datetime.datetime.utcnow()
     entrega.sincronizado_en = datetime.datetime.utcnow()
 

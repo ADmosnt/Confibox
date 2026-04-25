@@ -36,7 +36,7 @@ def create_app():
         response.headers['X-XSS-Protection'] = '1; mode=block'
         response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         # Allow geolocation for field workers
-        response.headers['Permissions-Policy'] = 'geolocation=(self), microphone=(), camera=()'
+        response.headers['Permissions-Policy'] = 'geolocation=(self), microphone=(), camera=(self)'
         return response
 
     from app import models  # noqa: F401
@@ -52,6 +52,7 @@ def create_app():
     from app.routes.pedidos import bp as pedidos_bp
     from app.routes.entregas import bp as entregas_bp
     from app.routes.solicitudes import bp as solicitudes_bp
+    from app.routes.uploads import bp as uploads_bp
 
     app.register_blueprint(config_bp, url_prefix='/api/config')
     app.register_blueprint(maestras_bp, url_prefix='/api')
@@ -64,6 +65,7 @@ def create_app():
     app.register_blueprint(pedidos_bp, url_prefix='/api/pedidos')
     app.register_blueprint(entregas_bp, url_prefix='/api/entregas')
     app.register_blueprint(solicitudes_bp, url_prefix='/api/solicitudes-georef')
+    app.register_blueprint(uploads_bp, url_prefix='/api/uploads')
 
     _ready = {'done': False}
 

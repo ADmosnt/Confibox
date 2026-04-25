@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  getMiRuta, checkinEntrega, createDevolucionEntrega, createSolicitud,
+  getMiRuta, checkinEntrega, createDevolucionEntrega, createSolicitud, uploadFile,
 } from '../api'
 import MapaTiendas from '../components/MapaTiendas'
 import useCurrentPosition from '../hooks/useCurrentPosition'
@@ -52,11 +52,21 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
   const [motivo, setMotivo] = useState('')
   const [observacion, setObservacion] = useState('')
   const [alertaDistancia, setAlertaDistancia] = useState(null)
+  const [fotoFile, setFotoFile] = useState(null)
+  const [fotoPreview, setFotoPreview] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => { getPosition() }, [])
 
   const necesitaMotivo = ['rechazada', 'local_cerrado'].includes(estadoSel) || alertaDistancia
+  const necesitaFoto   = estadoSel === 'local_cerrado' || alertaDistancia
+
+  const handleFotoChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setFotoFile(file)
+    setFotoPreview(URL.createObjectURL(file))
+  }
 
   const submit = async () => {
     setSubmitting(true)
@@ -78,12 +88,18 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
     }
 
     try {
+      let foto_evidencia_url = undefined
+      if (fotoFile) {
+        const r = await uploadFile(fotoFile)
+        foto_evidencia_url = r.data.url
+      }
       await checkinEntrega(entrega.id, {
         estado: estadoSel,
         latitud: position?.lat ?? null,
         longitud: position?.lng ?? null,
         motivo_incidencia: motivo || undefined,
         observacion: observacion || undefined,
+        foto_evidencia_url,
       })
       toast.success('Entrega registrada')
       onDone()
@@ -180,13 +196,34 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Foto de evidencia {necesitaFoto ? '*' : '(opcional)'}
+            </label>
+            {fotoPreview ? (
+              <div className="space-y-1.5">
+                <img src={fotoPreview} alt="Evidencia" className="w-full max-h-40 object-cover rounded-lg border border-gray-200" />
+                <button type="button" onClick={() => { setFotoFile(null); setFotoPreview(null) }} className="text-xs text-red-500 hover:underline">
+                  Quitar foto
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <span className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+                  📷 Tomar foto
+                </span>
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoChange} />
+              </label>
+            )}
+          </div>
+
           <div className="flex gap-3 pt-2 border-t">
             <button onClick={onClose} className="flex-1 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
               Cancelar
             </button>
             <button
               onClick={submit}
-              disabled={submitting || (necesitaMotivo && !motivo)}
+              disabled={submitting || (necesitaMotivo && !motivo) || (necesitaFoto && !fotoFile)}
               className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {submitting ? 'Guardando...' : 'Confirmar'}

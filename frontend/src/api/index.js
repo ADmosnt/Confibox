@@ -87,6 +87,13 @@ export const checkinEntrega = (id, data) => api.put(`/entregas/${id}/checkin`, d
 export const syncOffline = (queue) => api.post('/entregas/sync', { queue })
 export const createDevolucionEntrega = (id, data) => api.post(`/entregas/${id}/devoluciones`, data)
 
+// ── Uploads ────────────────────────────────────────────────────────────────
+export const uploadFile = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return api.post('/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+}
+
 // ── Solicitudes georef ─────────────────────────────────────────────────────
 export const getSolicitudes = (params) => api.get('/solicitudes-georef', { params })
 export const createSolicitud = (data) => api.post('/solicitudes-georef', data)

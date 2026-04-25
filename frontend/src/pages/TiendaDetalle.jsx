@@ -96,13 +96,25 @@ export default function TiendaDetalle() {
           </dl>
         </div>
 
-        {tienda.latitud ? (
-          <MapaTiendas tiendas={[tienda]} height="320px" />
-        ) : (
-          <div className="bg-white rounded-lg shadow flex items-center justify-center text-gray-400 text-sm min-h-[200px]">
-            Sin GPS registrado para esta tienda.
-          </div>
-        )}
+        <div className="space-y-4">
+          {tienda.foto_url && (
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <img
+                src={tienda.foto_url}
+                alt="Fachada"
+                className="w-full object-cover max-h-56"
+              />
+              <p className="text-xs text-gray-400 px-3 py-1.5">Fachada</p>
+            </div>
+          )}
+          {tienda.latitud ? (
+            <MapaTiendas tiendas={[tienda]} height="320px" />
+          ) : (
+            <div className="bg-white rounded-lg shadow flex items-center justify-center text-gray-400 text-sm min-h-[200px]">
+              Sin GPS registrado para esta tienda.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

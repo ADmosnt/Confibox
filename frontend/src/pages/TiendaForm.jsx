@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
-import { getTienda, createTienda, updateTienda, getZonas, getUsuariosByRol } from '../api'
+import { getTienda, createTienda, updateTienda, getZonas, getUsuariosByRol, uploadFile } from '../api'
 import useCurrentPosition from '../hooks/useCurrentPosition'
 import MapaTiendas from '../components/MapaTiendas'
 import { useAuth } from '../context/AuthContext'
@@ -31,6 +31,8 @@ export default function TiendaForm() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [fotoFile, setFotoFile] = useState(null)
+  const [fotoPreview, setFotoPreview] = useState(null)
 
   useEffect(() => {
     getZonas().then((r) => setZonas(r.data))
@@ -74,13 +76,26 @@ export default function TiendaForm() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
 
+  const handleFotoChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setFotoFile(file)
+    setFotoPreview(URL.createObjectURL(file))
+  }
+
   const submit = async (e) => {
     e.preventDefault()
     setError('')
     setSaving(true)
     try {
+      let foto_url = form.foto_url ?? null
+      if (fotoFile) {
+        const r = await uploadFile(fotoFile)
+        foto_url = r.data.url
+      }
       const payload = {
         ...form,
+        foto_url,
         zona_id:     form.zona_id     || null,
         vendedor_id: form.vendedor_id || null,
         latitud:     form.latitud     === '' ? null : Number(form.latitud),
@@ -182,6 +197,40 @@ export default function TiendaForm() {
           <div>
             <label className={lbl}>Observaciones</label>
             <textarea className={inp} rows={2} value={form.observaciones} onChange={(e) => set('observaciones', e.target.value)} placeholder="Opcional — horarios, accesos, contacto, etc." />
+          </div>
+
+          <div>
+            <label className={lbl}>Foto de fachada</label>
+            <div className="space-y-2">
+              {(fotoPreview || form.foto_url) && (
+                <img
+                  src={fotoPreview ?? form.foto_url}
+                  alt="Fachada"
+                  className="w-full max-h-48 object-cover rounded-lg border border-gray-200"
+                />
+              )}
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <span className="text-sm border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50">
+                  {fotoPreview || form.foto_url ? 'Cambiar foto' : '📷 Agregar foto'}
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleFotoChange}
+                />
+              </label>
+              {(fotoPreview || form.foto_url) && (
+                <button
+                  type="button"
+                  onClick={() => { setFotoFile(null); setFotoPreview(null); set('foto_url', null) }}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  Quitar foto
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
