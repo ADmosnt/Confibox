@@ -54,12 +54,17 @@ def mi_ruta():
 # ── Listar entregas ────────────────────────────────────────────────────────────
 
 @bp.route('', methods=['GET'])
-@require_role('admin', 'almacenista')
+@require_role('admin', 'almacenista', 'chofer')
 def list_entregas():
+    user = get_current_user()
     q = EntregaDiaria.query
-    chofer_id = request.args.get('chofer_id')
-    if chofer_id:
-        q = q.filter(EntregaDiaria.chofer_id == int(chofer_id))
+
+    if user.rol == 'chofer':
+        q = q.filter(EntregaDiaria.chofer_id == user.id)
+    else:
+        chofer_id = request.args.get('chofer_id')
+        if chofer_id:
+            q = q.filter(EntregaDiaria.chofer_id == int(chofer_id))
     estado = request.args.get('estado')
     if estado:
         q = q.filter(EntregaDiaria.estado == estado)

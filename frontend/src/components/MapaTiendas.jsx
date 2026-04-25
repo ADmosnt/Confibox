@@ -53,19 +53,24 @@ function FitBounds({ tiendas }) {
 
 function CenterButton() {
   const map = useMap()
-  const center = () => {
+  const center = (e) => {
+    e.stopPropagation()
     navigator.geolocation?.getCurrentPosition(({ coords }) => {
       map.setView([coords.latitude, coords.longitude], 15)
     })
   }
   return (
-    <button
-      onClick={center}
-      title="Mi ubicación"
-      className="absolute bottom-4 right-4 z-[1000] bg-white rounded-full shadow-md w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-50 text-lg"
-    >
-      ◎
-    </button>
+    <div className="leaflet-bottom leaflet-right" style={{ pointerEvents: 'none' }}>
+      <div className="leaflet-control" style={{ pointerEvents: 'auto', marginRight: '12px', marginBottom: '12px' }}>
+        <button
+          onClick={center}
+          title="Mi ubicación"
+          className="bg-white rounded-full shadow-md w-10 h-10 flex items-center justify-center text-gray-700 hover:bg-gray-50 text-lg border border-gray-200"
+        >
+          ◎
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -147,8 +152,9 @@ export default function MapaTiendas({
               </Popup>
             </Marker>
           ))}
+
+        <CenterButton />
       </MapContainer>
-      <CenterButton />
     </div>
   )
 }
