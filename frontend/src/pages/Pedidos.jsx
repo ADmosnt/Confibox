@@ -5,7 +5,6 @@ import { getPedidosByEstados, facturarPedido, anularPedido } from '../api'
 import { EstadoBadge } from '../components/EstadoBadge'
 import { useAuth } from '../context/AuthContext'
 
-// Group an array of pedidos by date string (YYYY-MM-DD local)
 function byDay(pedidos) {
   const groups = {}
   for (const p of pedidos) {
@@ -15,10 +14,10 @@ function byDay(pedidos) {
     if (!groups[day]) groups[day] = []
     groups[day].push(p)
   }
-  return Object.entries(groups) // [[date, [pedidos]], ...]
+  return Object.entries(groups)
 }
 
-function PedidoRow({ p, canFacturar, canAnular, onAction }) {
+function PedidoRow({ p, canFacturar, canAnular, onAction, showDate }) {
   const handleFacturar = async () => {
     if (!confirm(`¿Facturar pedido ${p.numero_pedido}?`)) return
     try { await facturarPedido(p.id); toast.success(`${p.numero_pedido} facturado`); onAction() }
@@ -40,6 +39,11 @@ function PedidoRow({ p, canFacturar, canAnular, onAction }) {
       <td className="px-4 py-2.5 text-gray-500 text-xs">{p.tienda_zona ?? '—'}</td>
       <td className="px-4 py-2.5 text-gray-500 text-xs">{p.vendedor ?? '—'}</td>
       <td className="px-4 py-2.5 text-center"><EstadoBadge estado={p.estado} /></td>
+      {showDate && (
+        <td className="px-4 py-2.5 text-gray-400 text-xs">
+          {p.creado_en ? new Date(p.creado_en).toLocaleDateString('es-VE') : '—'}
+        </td>
+      )}
       {(canFacturar || canAnular) && (
         <td className="px-4 py-2.5 text-center space-x-2 whitespace-nowrap">
           {canFacturar && p.estado === 'pendiente' && (
@@ -54,29 +58,78 @@ function PedidoRow({ p, canFacturar, canAnular, onAction }) {
   )
 }
 
-function DayGroup({ date, pedidos, canFacturar, canAnular, onAction }) {
+// DayGroup must return a Fragment — <tbody> only accepts <tr> children.
+// The collapsible header is a <tr><td colSpan> so the browser grid stays intact.
+function DayGroup({ date, pedidos, colSpan, canFacturar, canAnular, onAction, showDate }) {
   const [open, setOpen] = useState(true)
   return (
-    <div className="mb-1">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200"
-      >
-        <span>{open ? '▾' : '▸'}</span>
-        <span>{date}</span>
-        <span className="ml-auto font-normal normal-case text-gray-400">{pedidos.length} pedido{pedidos.length !== 1 ? 's' : ''}</span>
-      </button>
+    <>
+      <tr>
+        <td colSpan={colSpan} className="p-0 bg-gray-50 border-b border-gray-200">
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="w-full flex items-center gap-2 px-4 py-1.5 hover:bg-gray-100 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+          >
+            <span>{open ? '▾' : '▸'}</span>
+            <span>{date}</span>
+            <span className="ml-auto font-normal normal-case text-gray-400">
+              {pedidos.length} pedido{pedidos.length !== 1 ? 's' : ''}
+            </span>
+          </button>
+        </td>
+      </tr>
       {open && pedidos.map((p) => (
-        <PedidoRow key={p.id} p={p} canFacturar={canFacturar} canAnular={canAnular} onAction={onAction} />
+        <PedidoRow
+          key={p.id}
+          p={p}
+          canFacturar={canFacturar}
+          canAnular={canAnular}
+          onAction={onAction}
+          showDate={showDate}
+        />
       ))}
+    </>
+  )
+}
+
+function PedidosTable({ pedidos, canFacturar, canAnular, onAction, showDate = false }) {
+  const hasActions = canFacturar || canAnular
+  const colSpan = 5 + (hasActions || showDate ? 1 : 0)
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+          <tr>
+            <th className="px-4 py-2 text-left">N° Pedido</th>
+            <th className="px-4 py-2 text-left">Tienda</th>
+            <th className="px-4 py-2 text-left">Zona</th>
+            <th className="px-4 py-2 text-left">Vendedor</th>
+            <th className="px-4 py-2 text-center">Estado</th>
+            {showDate && <th className="px-4 py-2 text-left">Fecha</th>}
+            {hasActions && <th className="px-4 py-2 text-center">Acciones</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {byDay(pedidos).map(([date, group]) => (
+            <DayGroup
+              key={date}
+              date={date}
+              pedidos={group}
+              colSpan={colSpan}
+              canFacturar={canFacturar}
+              canAnular={canAnular}
+              onAction={onAction}
+              showDate={showDate}
+            />
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
 function Panel({ title, color, pedidos, loading, canFacturar, canAnular, onAction, emptyMsg }) {
   const [open, setOpen] = useState(true)
-  const days = byDay(pedidos)
-
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <button
@@ -89,40 +142,12 @@ function Panel({ title, color, pedidos, loading, canFacturar, canAnular, onActio
         </span>
         <span className="text-xs">{open ? '▾' : '▸'}</span>
       </button>
-
       {open && (
-        loading ? (
-          <p className="text-center text-gray-400 text-sm py-6">Cargando...</p>
-        ) : pedidos.length === 0 ? (
-          <p className="text-center text-gray-400 text-sm py-6">{emptyMsg}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                <tr>
-                  <th className="px-4 py-2 text-left">N° Pedido</th>
-                  <th className="px-4 py-2 text-left">Tienda</th>
-                  <th className="px-4 py-2 text-left">Zona</th>
-                  <th className="px-4 py-2 text-left">Vendedor</th>
-                  <th className="px-4 py-2 text-center">Estado</th>
-                  {(canFacturar || canAnular) && <th className="px-4 py-2 text-center">Acciones</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {days.map(([date, group]) => (
-                  <DayGroup
-                    key={date}
-                    date={date}
-                    pedidos={group}
-                    canFacturar={canFacturar}
-                    canAnular={canAnular}
-                    onAction={onAction}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )
+        loading
+          ? <p className="text-center text-gray-400 text-sm py-6">Cargando...</p>
+          : pedidos.length === 0
+            ? <p className="text-center text-gray-400 text-sm py-6">{emptyMsg}</p>
+            : <PedidosTable pedidos={pedidos} canFacturar={canFacturar} canAnular={canAnular} onAction={onAction} />
       )}
     </div>
   )
@@ -182,7 +207,6 @@ export default function Pedidos() {
       </div>
 
       <div className="space-y-4">
-        {/* Panel 1 — Por facturar */}
         <Panel
           title="Por facturar"
           color="bg-gray-50 border-gray-200 text-gray-700"
@@ -193,8 +217,6 @@ export default function Pedidos() {
           onAction={loadActive}
           emptyMsg="No hay pedidos pendientes de facturación."
         />
-
-        {/* Panel 2 — Cargando camión */}
         <Panel
           title="Cargando camión"
           color="bg-blue-50 border-blue-200 text-blue-800"
@@ -205,8 +227,6 @@ export default function Pedidos() {
           onAction={loadActive}
           emptyMsg="No hay pedidos facturados esperando carga."
         />
-
-        {/* Panel 3 — En despacho */}
         <Panel
           title="En despacho"
           color="bg-yellow-50 border-yellow-200 text-yellow-800"
@@ -218,7 +238,6 @@ export default function Pedidos() {
           emptyMsg="No hay pedidos en ruta actualmente."
         />
 
-        {/* Historial (entregado / con_incidencia / anulado) */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <button
             onClick={() => setShowHistory((v) => !v)}
@@ -247,32 +266,12 @@ export default function Pedidos() {
                   {histLoading ? '…' : `${historial.length} pedido${historial.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
-
-              {histLoading ? (
-                <p className="text-center text-gray-400 text-sm py-6">Cargando...</p>
-              ) : historial.length === 0 ? (
-                <p className="text-center text-gray-400 text-sm py-6">No hay pedidos en el historial para este filtro.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                      <tr>
-                        <th className="px-4 py-2 text-left">N° Pedido</th>
-                        <th className="px-4 py-2 text-left">Tienda</th>
-                        <th className="px-4 py-2 text-left">Zona</th>
-                        <th className="px-4 py-2 text-left">Vendedor</th>
-                        <th className="px-4 py-2 text-center">Estado</th>
-                        <th className="px-4 py-2 text-left">Fecha</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {byDay(historial).map(([date, group]) => (
-                        <DayGroup key={date} date={date} pedidos={group} canFacturar={false} canAnular={canAnular} onAction={loadActive} />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {histLoading
+                ? <p className="text-center text-gray-400 text-sm py-6">Cargando...</p>
+                : historial.length === 0
+                  ? <p className="text-center text-gray-400 text-sm py-6">No hay pedidos en el historial para este filtro.</p>
+                  : <PedidosTable pedidos={historial} canFacturar={false} canAnular={false} onAction={loadActive} showDate />
+              }
             </div>
           )}
         </div>
