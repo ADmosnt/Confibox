@@ -110,6 +110,16 @@ def _run_migrations():
         conn.execute(text("DROP TABLE IF EXISTS clientes_telefonos CASCADE"))
         conn.execute(text("DROP TABLE IF EXISTS grupos_clientes CASCADE"))
 
+        # Grupos de clientes table (new — db.create_all handles creation,
+        # but we need the FK column on clientes before create_all runs)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS grupos_clientes (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL UNIQUE,
+                descripcion VARCHAR(200)
+            )
+        """))
+
         # Add new columns to clientes
         conn.execute(text(
             "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS vendedor_id INTEGER REFERENCES usuarios(id)"
@@ -128,6 +138,9 @@ def _run_migrations():
         ))
         conn.execute(text(
             "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS foto_url VARCHAR(500)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS grupo_cliente_id INTEGER REFERENCES grupos_clientes(id)"
         ))
 
         # Drop legacy clientes columns if they exist

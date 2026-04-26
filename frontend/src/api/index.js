@@ -48,6 +48,11 @@ export const createGrupoProducto = (data) => api.post('/grupos-productos', data)
 export const updateGrupoProducto = (id, data) => api.put(`/grupos-productos/${id}`, data)
 export const deleteGrupoProducto = (id) => api.delete(`/grupos-productos/${id}`)
 
+export const getGruposClientes = () => api.get('/grupos-clientes')
+export const createGrupoCliente = (data) => api.post('/grupos-clientes', data)
+export const updateGrupoCliente = (id, data) => api.put(`/grupos-clientes/${id}`, data)
+export const deleteGrupoCliente = (id) => api.delete(`/grupos-clientes/${id}`)
+
 // ── Tiendas (clientes) ─────────────────────────────────────────────────────
 export const getTiendas = (params) => api.get('/clientes', { params })
 export const getTienda = (id) => api.get(`/clientes/${id}`)

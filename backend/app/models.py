@@ -65,6 +65,16 @@ class GrupoProducto(db.Model):
         return {'id': self.id, 'nombre': self.nombre}
 
 
+class GrupoCliente(db.Model):
+    __tablename__ = 'grupos_clientes'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    descripcion = db.Column(db.String(200))
+
+    def to_dict(self):
+        return {'id': self.id, 'nombre': self.nombre, 'descripcion': self.descripcion}
+
+
 class Producto(db.Model):
     __tablename__ = 'productos'
     id = db.Column(db.Integer, primary_key=True)
@@ -98,6 +108,7 @@ class Cliente(db.Model):
     rif = db.Column(db.String(20))
     direccion = db.Column(db.Text)
     zona_id = db.Column(db.Integer, db.ForeignKey('zonas.id'))
+    grupo_cliente_id = db.Column(db.Integer, db.ForeignKey('grupos_clientes.id'), nullable=True)
     vendedor_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
     # confibox | actual | ambos
     empresa = db.Column(db.String(20), default='confibox')
@@ -109,6 +120,7 @@ class Cliente(db.Model):
     activo = db.Column(db.Boolean, default=True)
 
     zona = db.relationship('Zona', backref='clientes')
+    grupo_cliente = db.relationship('GrupoCliente', backref='clientes')
     vendedor = db.relationship('Usuario', foreign_keys=[vendedor_id])
 
     def to_dict(self):
@@ -121,6 +133,8 @@ class Cliente(db.Model):
             'zona_id': self.zona_id,
             'zona': self.zona.nombre if self.zona else None,
             'zona_color': self.zona.color if self.zona else None,
+            'grupo_cliente_id': self.grupo_cliente_id,
+            'grupo_cliente': self.grupo_cliente.nombre if self.grupo_cliente else None,
             'vendedor_id': self.vendedor_id,
             'vendedor': self.vendedor.username if self.vendedor else None,
             'empresa': self.empresa,

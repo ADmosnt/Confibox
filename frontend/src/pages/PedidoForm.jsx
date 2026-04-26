@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { getTiendas, getProductos, createPedido } from '../api'
+import {
+  getTiendas, getProductos, createPedido,
+  getZonas, getGruposClientes, getGruposProductos,
+} from '../api'
 
 export default function PedidoForm() {
   const navigate = useNavigate()
   const [tiendas, setTiendas] = useState([])
   const [productos, setProductos] = useState([])
+  const [zonas, setZonas] = useState([])
+  const [gruposClientes, setGruposClientes] = useState([])
+  const [gruposProductos, setGruposProductos] = useState([])
+
   const [tiendaId, setTiendaId] = useState('')
   const [tiendaSearch, setTiendaSearch] = useState('')
+  const [zonaFiltro, setZonaFiltro] = useState('')
+  const [grupoClienteFiltro, setGrupoClienteFiltro] = useState('')
+
   const [productoSearch, setProductoSearch] = useState('')
+  const [grupoProductoFiltro, setGrupoProductoFiltro] = useState('')
+
   const [detalles, setDetalles] = useState([])
   const [nota, setNota] = useState('')
   const [error, setError] = useState('')
@@ -18,34 +30,45 @@ export default function PedidoForm() {
   useEffect(() => {
     getTiendas({ activo: true }).then((r) => setTiendas(r.data)).catch(() => toast.error('Error cargando tiendas'))
     getProductos({ activo: true }).then((r) => setProductos(r.data)).catch(() => toast.error('Error cargando productos'))
+    getZonas().then((r) => setZonas(r.data)).catch(() => {})
+    getGruposClientes().then((r) => setGruposClientes(r.data)).catch(() => {})
+    getGruposProductos().then((r) => setGruposProductos(r.data)).catch(() => {})
   }, [])
 
   const tiendasFiltradas = useMemo(() => {
+    let list = tiendas
+    if (zonaFiltro) list = list.filter((t) => String(t.zona_id) === zonaFiltro)
+    if (grupoClienteFiltro) list = list.filter((t) => String(t.grupo_cliente_id) === grupoClienteFiltro)
     const q = tiendaSearch.toLowerCase()
-    if (!q) return tiendas.slice(0, 30)
-    return tiendas.filter((t) =>
-      t.razon_social.toLowerCase().includes(q) ||
-      t.codigo.toLowerCase().includes(q) ||
-      (t.zona ?? '').toLowerCase().includes(q)
-    )
-  }, [tiendas, tiendaSearch])
+    if (q) {
+      list = list.filter((t) =>
+        t.razon_social.toLowerCase().includes(q) ||
+        t.codigo.toLowerCase().includes(q) ||
+        (t.zona ?? '').toLowerCase().includes(q)
+      )
+    }
+    return tiendaSearch || zonaFiltro || grupoClienteFiltro ? list : list.slice(0, 30)
+  }, [tiendas, tiendaSearch, zonaFiltro, grupoClienteFiltro])
 
   const productosDisponibles = useMemo(() => {
     const yaAgregados = new Set(detalles.map((d) => d.producto_id))
+    let list = productos.filter((p) => !yaAgregados.has(p.id))
+    if (grupoProductoFiltro) list = list.filter((p) => String(p.grupo_id) === grupoProductoFiltro)
     const q = productoSearch.toLowerCase()
-    return productos
-      .filter((p) => !yaAgregados.has(p.id))
-      .filter((p) => !q || p.descripcion.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q))
-      .slice(0, 20)
-  }, [productos, detalles, productoSearch])
+    if (q) list = list.filter((p) => p.descripcion.toLowerCase().includes(q) || p.codigo.toLowerCase().includes(q))
+    return list.slice(0, 20)
+  }, [productos, detalles, productoSearch, grupoProductoFiltro])
 
   const tiendaSeleccionada = tiendas.find((t) => String(t.id) === String(tiendaId))
+
+  const showTiendaDropdown = tiendaSearch || zonaFiltro || grupoClienteFiltro
 
   const agregarProducto = (p) => {
     setDetalles((d) => [...d, {
       producto_id: p.id,
       codigo: p.codigo,
       descripcion: p.descripcion,
+      grupo: p.grupo,
       unidades_por_bulto: p.unidades_por_bulto,
       cantidad_bultos: 1,
       cantidad_unidades: 0,
@@ -72,8 +95,9 @@ export default function PedidoForm() {
       cantidad_bultos: Number(d.cantidad_bultos) || 0,
       cantidad_unidades: Number(d.cantidad_unidades) || 0,
     }))
-    const totalCero = detallesPayload.every((d) => d.cantidad_bultos === 0 && d.cantidad_unidades === 0)
-    if (totalCero) return setError('Cada detalle debe tener al menos una cantidad mayor que cero')
+    if (detallesPayload.every((d) => d.cantidad_bultos === 0 && d.cantidad_unidades === 0)) {
+      return setError('Cada detalle debe tener al menos una cantidad mayor que cero')
+    }
 
     setSaving(true)
     try {
@@ -92,6 +116,7 @@ export default function PedidoForm() {
   }
 
   const inp = 'w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const sel = 'border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
     <div>
@@ -108,6 +133,7 @@ export default function PedidoForm() {
       )}
 
       <form onSubmit={submit} className="space-y-5">
+        {/* ── Tienda ─────────────────────────────────────────────── */}
         <div className="bg-white rounded-lg shadow p-5">
           <h3 className="font-semibold text-gray-700 mb-3">Tienda</h3>
           {tiendaSeleccionada ? (
@@ -115,23 +141,41 @@ export default function PedidoForm() {
               <div>
                 <p className="font-semibold text-gray-800">{tiendaSeleccionada.razon_social}</p>
                 <p className="text-xs text-gray-500">
-                  {tiendaSeleccionada.codigo} · {tiendaSeleccionada.zona ?? 'Sin zona'} · {tiendaSeleccionada.empresa}
+                  {tiendaSeleccionada.codigo}
+                  {tiendaSeleccionada.zona && ` · ${tiendaSeleccionada.zona}`}
+                  {tiendaSeleccionada.grupo_cliente && ` · ${tiendaSeleccionada.grupo_cliente}`}
+                  {` · ${tiendaSeleccionada.empresa}`}
                 </p>
               </div>
-              <button type="button" onClick={() => { setTiendaId(''); setTiendaSearch('') }} className="text-xs text-red-500 hover:underline">
+              <button
+                type="button"
+                onClick={() => { setTiendaId(''); setTiendaSearch('') }}
+                className="text-xs text-red-500 hover:underline flex-shrink-0"
+              >
                 Cambiar
               </button>
             </div>
           ) : (
             <>
+              {/* Cascading filters */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                <select value={zonaFiltro} onChange={(e) => setZonaFiltro(e.target.value)} className={sel}>
+                  <option value="">Todas las zonas</option>
+                  {zonas.map((z) => <option key={z.id} value={String(z.id)}>{z.nombre}</option>)}
+                </select>
+                <select value={grupoClienteFiltro} onChange={(e) => setGrupoClienteFiltro(e.target.value)} className={sel}>
+                  <option value="">Todos los grupos</option>
+                  {gruposClientes.map((g) => <option key={g.id} value={String(g.id)}>{g.nombre}</option>)}
+                </select>
+              </div>
               <input
                 type="text"
-                placeholder="Buscar tienda por nombre, código o zona..."
+                placeholder="Buscar tienda por nombre o código..."
                 value={tiendaSearch}
                 onChange={(e) => setTiendaSearch(e.target.value)}
                 className={inp}
               />
-              {tiendaSearch && (
+              {showTiendaDropdown && (
                 <div className="mt-2 max-h-48 overflow-y-auto border rounded-md divide-y">
                   {tiendasFiltradas.length === 0 ? (
                     <p className="p-3 text-sm text-gray-400">Sin resultados</p>
@@ -139,11 +183,15 @@ export default function PedidoForm() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => { setTiendaId(t.id); setTiendaSearch('') }}
+                      onClick={() => { setTiendaId(t.id); setTiendaSearch(''); setZonaFiltro(''); setGrupoClienteFiltro('') }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
                     >
                       <span className="font-medium">{t.razon_social}</span>
-                      <span className="text-xs text-gray-500 ml-2">{t.codigo} · {t.zona ?? 'Sin zona'}</span>
+                      <span className="text-xs text-gray-400 ml-2">
+                        {t.codigo}
+                        {t.zona && ` · ${t.zona}`}
+                        {t.grupo_cliente && ` · ${t.grupo_cliente}`}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -152,8 +200,16 @@ export default function PedidoForm() {
           )}
         </div>
 
+        {/* ── Productos ──────────────────────────────────────────── */}
         <div className="bg-white rounded-lg shadow p-5">
           <h3 className="font-semibold text-gray-700 mb-3">Productos</h3>
+
+          <div className="flex flex-wrap gap-2 mb-2">
+            <select value={grupoProductoFiltro} onChange={(e) => setGrupoProductoFiltro(e.target.value)} className={sel}>
+              <option value="">Todos los grupos</option>
+              {gruposProductos.map((g) => <option key={g.id} value={String(g.id)}>{g.nombre}</option>)}
+            </select>
+          </div>
 
           <input
             type="text"
@@ -162,7 +218,7 @@ export default function PedidoForm() {
             onChange={(e) => setProductoSearch(e.target.value)}
             className={inp}
           />
-          {productoSearch && (
+          {(productoSearch || grupoProductoFiltro) && (
             <div className="mt-2 max-h-48 overflow-y-auto border rounded-md divide-y">
               {productosDisponibles.length === 0 ? (
                 <p className="p-3 text-sm text-gray-400">Sin resultados</p>
@@ -174,7 +230,9 @@ export default function PedidoForm() {
                   className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
                 >
                   <span className="font-medium">{p.descripcion}</span>
-                  <span className="text-xs text-gray-500 ml-2">{p.codigo} · {p.unidades_por_bulto} u/b</span>
+                  <span className="text-xs text-gray-500 ml-2">
+                    {p.codigo} · {p.unidades_por_bulto} u/b{p.grupo && ` · ${p.grupo}`}
+                  </span>
                 </button>
               ))}
             </div>
@@ -199,7 +257,9 @@ export default function PedidoForm() {
                       <tr key={d.producto_id}>
                         <td className="px-3 py-2">
                           <span className="font-medium">{d.descripcion}</span>
-                          <span className="text-xs text-gray-400 block">{d.codigo} · {d.unidades_por_bulto} u/b</span>
+                          <span className="text-xs text-gray-400 block">
+                            {d.codigo} · {d.unidades_por_bulto} u/b{d.grupo && ` · ${d.grupo}`}
+                          </span>
                         </td>
                         <td className="px-3 py-2 text-right">
                           <input
@@ -237,6 +297,7 @@ export default function PedidoForm() {
           )}
         </div>
 
+        {/* ── Nota ──────────────────────────────────────────────── */}
         <div className="bg-white rounded-lg shadow p-5">
           <h3 className="font-semibold text-gray-700 mb-3">Nota (opcional)</h3>
           <textarea

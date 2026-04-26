@@ -26,6 +26,9 @@ def list_clientes():
     zona_id = request.args.get('zona_id')
     if zona_id:
         q = q.filter(Cliente.zona_id == int(zona_id))
+    grupo_cliente_id = request.args.get('grupo_cliente_id')
+    if grupo_cliente_id:
+        q = q.filter(Cliente.grupo_cliente_id == int(grupo_cliente_id))
     empresa = request.args.get('empresa')
     if empresa:
         q = q.filter(Cliente.empresa == empresa)
@@ -63,6 +66,7 @@ def create_cliente():
         rif=data.get('rif'),
         direccion=data.get('direccion'),
         zona_id=data.get('zona_id'),
+        grupo_cliente_id=data.get('grupo_cliente_id'),
         vendedor_id=data.get('vendedor_id'),
         empresa=empresa,
         telefono=data.get('telefono'),
@@ -86,9 +90,9 @@ def update_cliente(id):
     if 'empresa' in data and data['empresa'] not in ('confibox', 'actual', 'ambos'):
         return jsonify({'error': "empresa debe ser 'confibox', 'actual' o 'ambos'"}), 400
 
-    for field in ('razon_social', 'rif', 'direccion', 'zona_id', 'vendedor_id',
-                  'empresa', 'telefono', 'latitud', 'longitud', 'foto_url',
-                  'observaciones', 'activo'):
+    for field in ('razon_social', 'rif', 'direccion', 'zona_id', 'grupo_cliente_id',
+                  'vendedor_id', 'empresa', 'telefono', 'latitud', 'longitud',
+                  'foto_url', 'observaciones', 'activo'):
         if field in data:
             setattr(c, field, data[field])
 

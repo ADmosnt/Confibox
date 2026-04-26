@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app import db
-from app.models import Zona, GrupoProducto, Cliente, Producto
+from app.models import Zona, GrupoProducto, GrupoCliente, Cliente, Producto
 from app.auth import require_role
 
 bp = Blueprint('maestras', __name__)
@@ -94,6 +94,54 @@ def delete_grupo_producto(id):
     n = Producto.query.filter_by(grupo_id=id, activo=True).count()
     if n:
         return jsonify({'error': f'No se puede eliminar: {n} producto(s) pertenecen a este grupo.'}), 409
+    db.session.delete(g)
+    db.session.commit()
+    return '', 204
+
+
+# ── Grupos de Clientes ─────────────────────────────────────────────────────────
+
+@bp.route('/grupos-clientes', methods=['GET'])
+@require_role(*ROLES_STAFF)
+def get_grupos_clientes():
+    grupos = GrupoCliente.query.order_by(GrupoCliente.nombre).all()
+    return jsonify([g.to_dict() for g in grupos])
+
+
+@bp.route('/grupos-clientes', methods=['POST'])
+@require_role(*ROLES_ADMIN)
+def create_grupo_cliente():
+    data = request.get_json() or {}
+    if not data.get('nombre'):
+        return jsonify({'error': 'nombre requerido'}), 400
+    if GrupoCliente.query.filter_by(nombre=data['nombre']).first():
+        return jsonify({'error': 'Ya existe un grupo con ese nombre'}), 409
+    g = GrupoCliente(nombre=data['nombre'], descripcion=data.get('descripcion'))
+    db.session.add(g)
+    db.session.commit()
+    return jsonify(g.to_dict()), 201
+
+
+@bp.route('/grupos-clientes/<int:id>', methods=['PUT'])
+@require_role(*ROLES_ADMIN)
+def update_grupo_cliente(id):
+    g = GrupoCliente.query.get_or_404(id)
+    data = request.get_json() or {}
+    if 'nombre' in data:
+        g.nombre = data['nombre']
+    if 'descripcion' in data:
+        g.descripcion = data['descripcion']
+    db.session.commit()
+    return jsonify(g.to_dict())
+
+
+@bp.route('/grupos-clientes/<int:id>', methods=['DELETE'])
+@require_role(*ROLES_ADMIN)
+def delete_grupo_cliente(id):
+    g = GrupoCliente.query.get_or_404(id)
+    n = Cliente.query.filter_by(grupo_cliente_id=id, activo=True).count()
+    if n:
+        return jsonify({'error': f'No se puede eliminar: {n} tienda(s) pertenecen a este grupo.'}), 409
     db.session.delete(g)
     db.session.commit()
     return '', 204
