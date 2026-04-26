@@ -29,6 +29,10 @@ api.interceptors.response.use(
 // ── Auth ───────────────────────────────────────────────────────────────────
 export const authLogin = (data) => api.post('/auth/login', data)
 export const getMe = () => api.get('/auth/me')
+export const changePassword = (data) => api.put('/auth/change-password', data)
+export const generateRecoveryCodes = () => api.post('/auth/generate-recovery-codes')
+export const getRecoveryCodesCount = () => api.get('/auth/recovery-codes/count')
+export const recoverWithCode = (data) => api.post('/auth/recover', data)
 
 // ── Config empresa ─────────────────────────────────────────────────────────
 export const getConfig = () => api.get('/config')

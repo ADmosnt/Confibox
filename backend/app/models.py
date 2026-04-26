@@ -322,6 +322,24 @@ class EntregaDevolucion(db.Model):
         }
 
 
+class RecoveryCode(db.Model):
+    __tablename__ = 'recovery_codes'
+    id = db.Column(db.Integer, primary_key=True)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    code_hash = db.Column(db.String(512), nullable=False)
+    usado_en = db.Column(db.DateTime(timezone=True))
+    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+
+    usuario = db.relationship('Usuario', backref='recovery_codes')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'usado_en': self.usado_en.isoformat() if self.usado_en else None,
+            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
+        }
+
+
 class SolicitudGeoref(db.Model):
     __tablename__ = 'solicitudes_georef'
     id = db.Column(db.Integer, primary_key=True)
