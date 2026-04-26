@@ -53,6 +53,8 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
   const necesitaMotivo = ['rechazada', 'local_cerrado'].includes(estadoSel) || alertaDistancia
   const necesitaFoto   = estadoSel === 'local_cerrado' || alertaDistancia
 
+  useEffect(() => () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview) }, [fotoPreview])
+
   const handleFotoChange = (e) => {
     const file = e.target.files[0]
     if (!file) return

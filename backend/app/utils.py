@@ -68,13 +68,8 @@ def numero_a_letras(valor):
     return f"{_entero_a_letras(entero)} CON {decimales:02d}/100"
 
 
-def siguiente_numero_pedido(db, Pedido):
-    """Generate next pedido number as zero-padded 8-digit string."""
-    from sqlalchemy import func
-    max_num = db.session.query(func.max(Pedido.numero_pedido)).scalar()
-    if max_num is None:
-        return '00000001'
-    try:
-        return str(int(max_num) + 1).zfill(8)
-    except (ValueError, TypeError):
-        return str(int(max_num.lstrip('0') or '0') + 1).zfill(8)
+def siguiente_numero_pedido(db, _Pedido=None):
+    """Generate next pedido number via a Postgres sequence (atomic, no race conditions)."""
+    from sqlalchemy import text
+    row = db.session.execute(text("SELECT nextval('seq_pedido_numero')")).fetchone()
+    return str(row[0]).zfill(8)

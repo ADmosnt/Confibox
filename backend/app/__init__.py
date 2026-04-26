@@ -169,6 +169,25 @@ def _run_migrations():
             "ALTER TABLE entregas_diarias ADD COLUMN IF NOT EXISTS salida_en TIMESTAMPTZ"
         ))
 
+        # Sequence for pedido numbers — replaces SELECT MAX() to eliminate race conditions
+        conn.execute(text(
+            "CREATE SEQUENCE IF NOT EXISTS seq_pedido_numero MINVALUE 1 START 1"
+        ))
+        # Idempotent: advance the sequence to current max so existing pedidos are not reused
+        conn.execute(text("""
+            DO $$
+            DECLARE max_num BIGINT;
+            BEGIN
+                SELECT MAX(CAST(numero_pedido AS BIGINT))
+                  INTO max_num
+                  FROM pedidos
+                 WHERE numero_pedido ~ '^[0-9]+$';
+                IF max_num IS NOT NULL THEN
+                    PERFORM setval('seq_pedido_numero', max_num, true);
+                END IF;
+            END $$;
+        """))
+
         conn.commit()
 
 

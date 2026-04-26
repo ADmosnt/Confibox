@@ -12,20 +12,26 @@ ESTADOS_ACTIVOS = ('pendiente', 'facturado', 'en_ruta')
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _build_picking_list(pedido):
-    """FEFO picking list for a pedido. Returns per-product extraction plan."""
+def _build_picking_list(pedido, lock=False):
+    """FEFO picking list for a pedido. Returns per-product extraction plan.
+
+    lock=True acquires row-level locks on lotes so concurrent iniciar_ruta
+    calls cannot double-deduct from the same stock.
+    """
     result = []
     for det in pedido.detalles:
         p = det.producto
         upb = p.unidades_por_bulto
         total_uds = (det.cantidad_bultos * upb) + det.cantidad_unidades
 
-        lotes = (
+        q = (
             Lote.query
             .filter(Lote.producto_id == det.producto_id, Lote.cantidad_bultos > 0)
             .order_by(Lote.fecha_vencimiento.asc().nullslast(), Lote.fecha_ingreso)
-            .all()
         )
+        if lock:
+            q = q.with_for_update()
+        lotes = q.all()
 
         stock_total = sum(l.cantidad_bultos * upb for l in lotes)
         restantes = total_uds
@@ -168,22 +174,31 @@ def anular_pedido(id):
 
 
 def _revertir_stock(pedido):
-    """Return dispatched units back to their lotes (last-in, first-out by fecha_ingreso)."""
+    """Return dispatched units back to their lotes (last-in, first-out by fecha_ingreso).
+
+    Uses divmod so remainder units < 1 bulto get rounded up as a partial bulto
+    on the last touched lote — consistent with how iniciar_ruta rounds down on
+    deduction (the almacenista handles partial bultos physically in both cases).
+    """
     for det in pedido.detalles:
         upb = det.producto.unidades_por_bulto
-        uds_a_devolver = (det.cantidad_bultos * upb) + det.cantidad_unidades
+        uds_restantes = (det.cantidad_bultos * upb) + det.cantidad_unidades
         lotes = (
             Lote.query
             .filter(Lote.producto_id == det.producto_id)
             .order_by(Lote.fecha_ingreso.desc())
             .all()
         )
+        last_lote = None
         for lote in lotes:
-            if uds_a_devolver <= 0:
+            if uds_restantes < upb:
                 break
-            bultos_a_reponer = uds_a_devolver // upb
-            lote.cantidad_bultos += bultos_a_reponer
-            uds_a_devolver -= bultos_a_reponer * upb
+            last_lote = lote
+            bultos, uds_restantes = divmod(uds_restantes, upb)
+            lote.cantidad_bultos += bultos
+        # Remainder < 1 bulto: credit as 1 partial bulto so no units vanish
+        if uds_restantes > 0 and last_lote:
+            last_lote.cantidad_bultos += 1
 
 
 @bp.route('/<int:id>/picking-list', methods=['GET'])
@@ -213,8 +228,9 @@ def iniciar_ruta(id):
     if chofer.rol != 'chofer':
         return jsonify({'error': 'El usuario indicado no tiene rol chofer'}), 400
 
-    # Verify stock and deduct FEFO
-    picking = _build_picking_list(pedido)
+    # Lock lotes and verify stock. with_for_update() prevents two concurrent
+    # iniciar_ruta calls from double-deducting the same inventory rows.
+    picking = _build_picking_list(pedido, lock=True)
     deficits = [r for r in picking if r['deficit'] > 0]
     if deficits:
         faltantes = ', '.join(f"{r['descripcion']} (faltan {r['deficit']} uds)" for r in deficits)

@@ -10,6 +10,7 @@ bp = Blueprint('entregas', __name__)
 DISTANCIA_MAXIMA_METROS = 50
 MOTIVOS_INCIDENCIA = ('local_cerrado', 'no_recibio', 'sin_pago', 'no_estaba_encargado', 'otro')
 MOTIVOS_DEVOLUCION = ('error_pedido', 'mercancia_danada', 'cliente_no_recibio', 'otro')
+ESTADOS_CHECKIN_VALIDOS = ('entregada', 'rechazada', 'local_cerrado', 'parcial')
 
 
 def _haversine(lat1, lon1, lat2, lon2):
@@ -232,7 +233,11 @@ def sync_offline():
             results.append({'entrega_id': eid, 'ok': True, 'skipped': True, 'estado': entrega.estado})
             continue
 
-        estado = item.get('estado', 'entregada')
+        estado = item.get('estado')
+        if estado not in ESTADOS_CHECKIN_VALIDOS:
+            results.append({'entrega_id': eid, 'ok': False,
+                            'error': f'estado inválido: {estado!r}'})
+            continue
         entrega.estado = estado
         entrega.motivo_incidencia = item.get('motivo_incidencia')
         entrega.observacion = item.get('observacion')
