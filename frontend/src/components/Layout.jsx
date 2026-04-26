@@ -8,6 +8,7 @@ const NAV = {
     { to: '/tiendas',          label: 'Tiendas' },
     { to: '/productos',        label: 'Productos' },
     { to: '/inventario',       label: 'Inventario' },
+    { to: '/almacen-planner',  label: 'Planner' },
     { to: '/pedidos',          label: 'Pedidos' },
     { to: '/entregas',         label: 'Entregas' },
     { to: '/mapa-en-vivo',     label: 'Mapa en Vivo' },
@@ -23,8 +24,9 @@ const NAV = {
     { to: '/pedidos', label: 'Pedidos' },
   ],
   almacenista: [
-    { to: '/inventario', label: 'Inventario' },
-    { to: '/pedidos',    label: 'Pedidos' },
+    { to: '/inventario',      label: 'Inventario' },
+    { to: '/almacen-planner', label: 'Planner' },
+    { to: '/pedidos',         label: 'Pedidos' },
   ],
   chofer: [
     { to: '/mi-ruta',  label: 'Mi Ruta' },

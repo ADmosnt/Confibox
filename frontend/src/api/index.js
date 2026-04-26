@@ -78,6 +78,9 @@ export const getLotes = (params) => api.get('/inventario/lotes', { params })
 export const createLote = (data) => api.post('/inventario/lotes', data)
 export const updateLote = (id, data) => api.put(`/inventario/lotes/${id}`, data)
 export const getStockConsolidado = () => api.get('/inventario/stock')
+export const getAlmacenLayout = () => api.get('/inventario/almacen-layout')
+export const saveAlmacenLayout = (layout) => api.put('/inventario/almacen-layout', { layout })
+export const getStockPorZona = () => api.get('/inventario/stock-por-zona')
 
 // ── Pedidos ────────────────────────────────────────────────────────────────
 export const getPedidos = (params) => api.get('/pedidos', { params })

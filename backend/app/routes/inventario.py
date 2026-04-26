@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request
 import datetime
+import json
 from sqlalchemy import func
 from app import db
-from app.models import Lote, Producto
+from app.models import Lote, Producto, AlmacenLayout
 from app.auth import require_role
 
 bp = Blueprint('inventario', __name__)
@@ -109,3 +110,43 @@ def get_stock_consolidado():
         })
     result.sort(key=lambda x: x['descripcion'])
     return jsonify(result)
+
+
+# ── Almacén Layout (WMS planner) ───────────────────────────────────────────────
+
+@bp.route('/almacen-layout', methods=['GET'])
+@require_role(*ROLES_READ)
+def get_almacen_layout():
+    row = AlmacenLayout.query.first()
+    if not row:
+        return jsonify({'layout': {}, 'actualizado_en': None})
+    return jsonify(row.to_dict())
+
+
+@bp.route('/almacen-layout', methods=['PUT'])
+@require_role(*ROLES_WRITE)
+def save_almacen_layout():
+    data = request.get_json() or {}
+    layout = data.get('layout', {})
+    row = AlmacenLayout.query.first()
+    if not row:
+        row = AlmacenLayout()
+        db.session.add(row)
+    row.layout_json = json.dumps(layout)
+    row.actualizado_en = datetime.datetime.utcnow()
+    db.session.commit()
+    return jsonify(row.to_dict())
+
+
+@bp.route('/stock-por-zona', methods=['GET'])
+@require_role(*ROLES_READ)
+def stock_por_zona():
+    """Lotes with stock > 0 grouped by ubicacion_almacen."""
+    lotes = Lote.query.filter(Lote.cantidad_bultos > 0).all()
+    zonas = {}
+    for lote in lotes:
+        key = lote.ubicacion_almacen or '(sin zona)'
+        if key not in zonas:
+            zonas[key] = []
+        zonas[key].append(lote.to_dict())
+    return jsonify(zonas)

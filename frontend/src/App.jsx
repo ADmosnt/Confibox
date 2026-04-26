@@ -21,6 +21,7 @@ import Entregas from './pages/Entregas'
 import SolicitudesGeoref from './pages/SolicitudesGeoref'
 import MapaEnVivo from './pages/MapaEnVivo'
 import JornadaEquipo from './pages/JornadaEquipo'
+import AlmacenPlanner from './pages/AlmacenPlanner'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 
@@ -84,6 +85,13 @@ export default function App() {
               <Route path="inventario" element={
                 <RequireAuth roles={['admin', 'almacenista']}>
                   <Lotes />
+                </RequireAuth>
+              } />
+
+              {/* WMS Planner */}
+              <Route path="almacen-planner" element={
+                <RequireAuth roles={['admin', 'almacenista']}>
+                  <AlmacenPlanner />
                 </RequireAuth>
               } />
 

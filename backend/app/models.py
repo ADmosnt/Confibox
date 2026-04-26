@@ -340,6 +340,21 @@ class RecoveryCode(db.Model):
         }
 
 
+class AlmacenLayout(db.Model):
+    __tablename__ = 'almacen_layout'
+    id = db.Column(db.Integer, primary_key=True)
+    layout_json = db.Column(db.Text, nullable=False, default='{}')
+    actualizado_en = db.Column(db.DateTime(timezone=True))
+
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'layout': json.loads(self.layout_json) if self.layout_json else {},
+            'actualizado_en': self.actualizado_en.isoformat() if self.actualizado_en else None,
+        }
+
+
 class JornadaEquipo(db.Model):
     __tablename__ = 'jornada_equipo'
     id = db.Column(db.Integer, primary_key=True)
