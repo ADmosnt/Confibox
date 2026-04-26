@@ -1,9 +1,8 @@
 from flask import Blueprint, jsonify, request
 import datetime
-import json
 from sqlalchemy import func
 from app import db
-from app.models import Lote, Producto, AlmacenLayout
+from app.models import Lote, Producto, AlmacenZona, Ubicacion
 from app.auth import require_role
 
 bp = Blueprint('inventario', __name__)
@@ -67,7 +66,7 @@ def create_lote():
 def update_lote(id):
     lote = Lote.query.get_or_404(id)
     data = request.get_json() or {}
-    for field in ('numero_lote', 'cantidad_bultos', 'ubicacion_almacen', 'nota'):
+    for field in ('numero_lote', 'cantidad_bultos', 'ubicacion_almacen', 'ubicacion_id', 'nivel', 'nota'):
         if field in data:
             setattr(lote, field, data[field])
     if 'fecha_vencimiento' in data:
@@ -112,41 +111,183 @@ def get_stock_consolidado():
     return jsonify(result)
 
 
-# ── Almacén Layout (WMS planner) ───────────────────────────────────────────────
+# ── WMS Planner: Zonas (logical map regions) ───────────────────────────────────
 
-@bp.route('/almacen-layout', methods=['GET'])
+@bp.route('/almacen-zonas', methods=['GET'])
 @require_role(*ROLES_READ)
-def get_almacen_layout():
-    row = AlmacenLayout.query.first()
-    if not row:
-        return jsonify({'layout': {}, 'actualizado_en': None})
-    return jsonify(row.to_dict())
+def list_almacen_zonas():
+    return jsonify([z.to_dict() for z in AlmacenZona.query.order_by(AlmacenZona.nombre).all()])
 
 
-@bp.route('/almacen-layout', methods=['PUT'])
+@bp.route('/almacen-zonas', methods=['POST'])
 @require_role(*ROLES_WRITE)
-def save_almacen_layout():
+def create_almacen_zona():
     data = request.get_json() or {}
-    layout = data.get('layout', {})
-    row = AlmacenLayout.query.first()
-    if not row:
-        row = AlmacenLayout()
-        db.session.add(row)
-    row.layout_json = json.dumps(layout)
-    row.actualizado_en = datetime.datetime.utcnow()
+    if not data.get('nombre'):
+        return jsonify({'error': 'nombre requerido'}), 400
+    if AlmacenZona.query.filter_by(nombre=data['nombre']).first():
+        return jsonify({'error': 'Ya existe una zona con ese nombre'}), 409
+    z = AlmacenZona(
+        nombre=data['nombre'],
+        color=data.get('color', '#DBEAFE'),
+        x=int(data.get('x', 0)), y=int(data.get('y', 0)),
+        width=int(data.get('width', 200)), height=int(data.get('height', 150)),
+    )
+    db.session.add(z)
     db.session.commit()
-    return jsonify(row.to_dict())
+    return jsonify(z.to_dict()), 201
 
 
-@bp.route('/stock-por-zona', methods=['GET'])
+@bp.route('/almacen-zonas/<int:id>', methods=['PUT'])
+@require_role(*ROLES_WRITE)
+def update_almacen_zona(id):
+    z = AlmacenZona.query.get_or_404(id)
+    data = request.get_json() or {}
+    for field in ('nombre', 'color', 'x', 'y', 'width', 'height'):
+        if field in data:
+            setattr(z, field, data[field])
+    db.session.commit()
+    return jsonify(z.to_dict())
+
+
+@bp.route('/almacen-zonas/<int:id>', methods=['DELETE'])
+@require_role(*ROLES_WRITE)
+def delete_almacen_zona(id):
+    z = AlmacenZona.query.get_or_404(id)
+    n = Ubicacion.query.filter_by(zona_id=id).count()
+    if n:
+        return jsonify({'error': f'No se puede eliminar: {n} ubicación(es) pertenecen a esta zona.'}), 409
+    db.session.delete(z)
+    db.session.commit()
+    return '', 204
+
+
+# ── WMS Planner: Ubicaciones (physical addressable spots) ──────────────────────
+
+@bp.route('/ubicaciones', methods=['GET'])
 @require_role(*ROLES_READ)
-def stock_por_zona():
-    """Lotes with stock > 0 grouped by ubicacion_almacen."""
+def list_ubicaciones():
+    placed = request.args.get('placed')
+    q = Ubicacion.query
+    if placed == 'true':
+        q = q.filter(Ubicacion.x.isnot(None))
+    elif placed == 'false':
+        q = q.filter(Ubicacion.x.is_(None))
+    return jsonify([u.to_dict() for u in q.order_by(Ubicacion.codigo).all()])
+
+
+@bp.route('/ubicaciones', methods=['POST'])
+@require_role(*ROLES_WRITE)
+def create_ubicacion():
+    data = request.get_json() or {}
+    if not data.get('codigo'):
+        return jsonify({'error': 'codigo requerido'}), 400
+    tipo = data.get('tipo', 'piso')
+    if tipo not in ('piso', 'rack'):
+        return jsonify({'error': "tipo debe ser 'piso' o 'rack'"}), 400
+    niveles = int(data.get('niveles', 1))
+    if niveles < 1:
+        return jsonify({'error': 'niveles debe ser >= 1'}), 400
+    if tipo == 'piso' and niveles != 1:
+        return jsonify({'error': 'piso solo admite 1 nivel'}), 400
+    if Ubicacion.query.filter_by(codigo=data['codigo']).first():
+        return jsonify({'error': 'Ya existe una ubicación con ese código'}), 409
+    u = Ubicacion(
+        codigo=data['codigo'],
+        zona_id=data.get('zona_id'),
+        tipo=tipo,
+        niveles=niveles,
+        x=data.get('x'), y=data.get('y'),
+        width=int(data.get('width', 80)),
+        height=int(data.get('height', 60 if tipo == 'piso' else 100)),
+        rotacion=int(data.get('rotacion', 0)),
+    )
+    db.session.add(u)
+    db.session.commit()
+    return jsonify(u.to_dict()), 201
+
+
+@bp.route('/ubicaciones/<int:id>', methods=['PUT'])
+@require_role(*ROLES_WRITE)
+def update_ubicacion(id):
+    u = Ubicacion.query.get_or_404(id)
+    data = request.get_json() or {}
+    if 'tipo' in data and data['tipo'] not in ('piso', 'rack'):
+        return jsonify({'error': "tipo debe ser 'piso' o 'rack'"}), 400
+    # Block reducing niveles below the highest occupied nivel
+    if 'niveles' in data:
+        new_niveles = int(data['niveles'])
+        max_in_use = (
+            db.session.query(func.max(Lote.nivel))
+            .filter(Lote.ubicacion_id == id, Lote.cantidad_bultos > 0)
+            .scalar()
+        )
+        if max_in_use and new_niveles < max_in_use:
+            return jsonify({
+                'error': f'No se puede reducir a {new_niveles} niveles: hay stock en el nivel {max_in_use}.'
+            }), 409
+    for field in ('codigo', 'zona_id', 'tipo', 'niveles', 'x', 'y', 'width', 'height', 'rotacion'):
+        if field in data:
+            setattr(u, field, data[field])
+    db.session.commit()
+    return jsonify(u.to_dict())
+
+
+@bp.route('/ubicaciones/<int:id>', methods=['DELETE'])
+@require_role(*ROLES_WRITE)
+def delete_ubicacion(id):
+    u = Ubicacion.query.get_or_404(id)
+    n = Lote.query.filter_by(ubicacion_id=id).filter(Lote.cantidad_bultos > 0).count()
+    if n:
+        return jsonify({'error': f'No se puede eliminar: {n} lote(s) con stock asignados aquí.'}), 409
+    # Detach any zero-stock lotes that pointed here, then delete
+    Lote.query.filter_by(ubicacion_id=id).update({'ubicacion_id': None, 'nivel': None})
+    db.session.delete(u)
+    db.session.commit()
+    return '', 204
+
+
+@bp.route('/lotes/<int:id>/ubicar', methods=['PUT'])
+@require_role(*ROLES_WRITE)
+def ubicar_lote(id):
+    """Assign a lote to (ubicacion, nivel). Validates nivel is within range."""
+    lote = Lote.query.get_or_404(id)
+    data = request.get_json() or {}
+    ubicacion_id = data.get('ubicacion_id')
+    if ubicacion_id is None:
+        # Detach
+        lote.ubicacion_id = None
+        lote.nivel = None
+        db.session.commit()
+        return jsonify(lote.to_dict())
+    u = Ubicacion.query.get_or_404(ubicacion_id)
+    nivel = data.get('nivel')
+    if u.tipo == 'rack':
+        if nivel is None:
+            return jsonify({'error': 'nivel requerido para racks'}), 400
+        nivel = int(nivel)
+        if nivel < 1 or nivel > u.niveles:
+            return jsonify({'error': f'nivel fuera de rango (1..{u.niveles})'}), 400
+    else:
+        nivel = None
+    lote.ubicacion_id = u.id
+    lote.nivel = nivel
+    db.session.commit()
+    return jsonify(lote.to_dict())
+
+
+@bp.route('/almacen-stock', methods=['GET'])
+@require_role(*ROLES_READ)
+def almacen_stock():
+    """Lotes with stock > 0 indexed by ubicacion_id and nivel.
+    Returns a flat dict: '{ubicacion_id}:{nivel|0}' → list of lotes."""
     lotes = Lote.query.filter(Lote.cantidad_bultos > 0).all()
-    zonas = {}
+    by_slot = {}
+    unassigned = []
     for lote in lotes:
-        key = lote.ubicacion_almacen or '(sin zona)'
-        if key not in zonas:
-            zonas[key] = []
-        zonas[key].append(lote.to_dict())
-    return jsonify(zonas)
+        if lote.ubicacion_id is None:
+            unassigned.append(lote.to_dict())
+            continue
+        key = f"{lote.ubicacion_id}:{lote.nivel or 0}"
+        by_slot.setdefault(key, []).append(lote.to_dict())
+    return jsonify({'slots': by_slot, 'sin_ubicar': unassigned})

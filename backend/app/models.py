@@ -154,16 +154,25 @@ class Lote(db.Model):
     numero_lote = db.Column(db.String(50))
     cantidad_bultos = db.Column(db.Integer, nullable=False, default=0)
     fecha_vencimiento = db.Column(db.Date)
-    ubicacion_almacen = db.Column(db.String(100))
+    ubicacion_almacen = db.Column(db.String(100))   # legacy free text — kept for back-compat
+    ubicacion_id = db.Column(db.Integer, db.ForeignKey('ubicaciones.id'), nullable=True)
+    nivel = db.Column(db.Integer)                   # 1..N for racks; NULL for piso
     fecha_ingreso = db.Column(db.Date, nullable=False, default=datetime.date.today)
     nota = db.Column(db.Text)
     creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
 
     producto = db.relationship('Producto', backref='lotes')
+    ubicacion = db.relationship('Ubicacion', backref='lotes')
 
     def to_dict(self):
         p = self.producto
         upb = p.unidades_por_bulto if p else 1
+        u = self.ubicacion
+        # Computed label: structured location wins over legacy text
+        if u:
+            label = f"{u.codigo}-N{self.nivel}" if u.tipo == 'rack' and self.nivel else u.codigo
+        else:
+            label = self.ubicacion_almacen
         return {
             'id': self.id,
             'producto_id': self.producto_id,
@@ -174,7 +183,10 @@ class Lote(db.Model):
             'cantidad_bultos': self.cantidad_bultos,
             'cantidad_unidades': self.cantidad_bultos * upb,
             'fecha_vencimiento': self.fecha_vencimiento.isoformat() if self.fecha_vencimiento else None,
-            'ubicacion_almacen': self.ubicacion_almacen,
+            'ubicacion_almacen': label,
+            'ubicacion_id': self.ubicacion_id,
+            'ubicacion_codigo': u.codigo if u else None,
+            'nivel': self.nivel,
             'fecha_ingreso': self.fecha_ingreso.isoformat(),
             'nota': self.nota,
         }
@@ -340,18 +352,63 @@ class RecoveryCode(db.Model):
         }
 
 
-class AlmacenLayout(db.Model):
-    __tablename__ = 'almacen_layout'
+class AlmacenZona(db.Model):
+    """Logical grouping rectangle on the warehouse map.
+    Pure presentation/container — does not own ubicaciones (loose coupling)."""
+    __tablename__ = 'almacen_zonas'
     id = db.Column(db.Integer, primary_key=True)
-    layout_json = db.Column(db.Text, nullable=False, default='{}')
-    actualizado_en = db.Column(db.DateTime(timezone=True))
+    nombre = db.Column(db.String(100), nullable=False, unique=True)
+    color = db.Column(db.String(20), nullable=False, default='#DBEAFE')
+    x = db.Column(db.Integer, nullable=False, default=0)
+    y = db.Column(db.Integer, nullable=False, default=0)
+    width = db.Column(db.Integer, nullable=False, default=200)
+    height = db.Column(db.Integer, nullable=False, default=150)
 
     def to_dict(self):
-        import json
         return {
             'id': self.id,
-            'layout': json.loads(self.layout_json) if self.layout_json else {},
-            'actualizado_en': self.actualizado_en.isoformat() if self.actualizado_en else None,
+            'nombre': self.nombre,
+            'color': self.color,
+            'x': self.x, 'y': self.y,
+            'width': self.width, 'height': self.height,
+        }
+
+
+class Ubicacion(db.Model):
+    """Physical addressable location: floor spot (piso) or rack with N levels.
+    `niveles` is NEVER NULL — piso has 1, rack has N."""
+    __tablename__ = 'ubicaciones'
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(30), nullable=False, unique=True)
+    zona_id = db.Column(db.Integer, db.ForeignKey('almacen_zonas.id'), nullable=True)
+    tipo = db.Column(db.String(10), nullable=False, default='piso')      # 'piso' | 'rack'
+    niveles = db.Column(db.Integer, nullable=False, default=1)
+    # Canvas placement — NULL means "exists but not placed on the map yet"
+    x = db.Column(db.Integer)
+    y = db.Column(db.Integer)
+    width = db.Column(db.Integer, default=80)
+    height = db.Column(db.Integer, default=60)
+    rotacion = db.Column(db.Integer, default=0)
+    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+
+    zona = db.relationship('AlmacenZona', backref='ubicaciones')
+
+    @property
+    def placed(self):
+        return self.x is not None and self.y is not None
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'codigo': self.codigo,
+            'zona_id': self.zona_id,
+            'zona': self.zona.nombre if self.zona else None,
+            'tipo': self.tipo,
+            'niveles': self.niveles,
+            'x': self.x, 'y': self.y,
+            'width': self.width, 'height': self.height,
+            'rotacion': self.rotacion,
+            'placed': self.placed,
         }
 
 

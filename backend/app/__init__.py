@@ -182,6 +182,16 @@ def _run_migrations():
             "ALTER TABLE entregas_diarias ADD COLUMN IF NOT EXISTS salida_en TIMESTAMPTZ"
         ))
 
+        # WMS planner schema v2 — drop legacy AlmacenLayout blob, add normalized FKs to lotes.
+        # New tables (almacen_zonas, ubicaciones) are created by db.create_all().
+        conn.execute(text("DROP TABLE IF EXISTS almacen_layout CASCADE"))
+        conn.execute(text(
+            "ALTER TABLE lotes ADD COLUMN IF NOT EXISTS ubicacion_id INTEGER REFERENCES ubicaciones(id)"
+        ))
+        conn.execute(text(
+            "ALTER TABLE lotes ADD COLUMN IF NOT EXISTS nivel INTEGER"
+        ))
+
         # Sequence for pedido numbers — replaces SELECT MAX() to eliminate race conditions
         conn.execute(text(
             "CREATE SEQUENCE IF NOT EXISTS seq_pedido_numero MINVALUE 1 START 1"
