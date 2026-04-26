@@ -99,6 +99,12 @@ export const getEntrega = (id) => api.get(`/entregas/${id}`)
 export const checkinEntrega = (id, data) => api.put(`/entregas/${id}/checkin`, data)
 export const syncOffline = (queue) => api.post('/entregas/sync', { queue })
 export const createDevolucionEntrega = (id, data) => api.post(`/entregas/${id}/devoluciones`, data)
+export const getMapaEnVivo = () => api.get('/entregas/mapa-en-vivo')
+
+// ── Jornada Equipo ─────────────────────────────────────────────────────────
+export const getJornadaEquipo = (fecha) => api.get('/entregas/jornada-equipo', { params: fecha ? { fecha } : {} })
+export const createJornadaEquipo = (data) => api.post('/entregas/jornada-equipo', data)
+export const deleteJornadaEquipo = (id) => api.delete(`/entregas/jornada-equipo/${id}`)
 
 // ── Uploads ────────────────────────────────────────────────────────────────
 export const uploadFile = (file) => {

@@ -340,6 +340,32 @@ class RecoveryCode(db.Model):
         }
 
 
+class JornadaEquipo(db.Model):
+    __tablename__ = 'jornada_equipo'
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.Date, nullable=False, default=datetime.date.today)
+    chofer_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    ayudante_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=False)
+    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+
+    chofer = db.relationship('Usuario', foreign_keys=[chofer_id])
+    ayudante = db.relationship('Usuario', foreign_keys=[ayudante_id])
+
+    __table_args__ = (
+        db.UniqueConstraint('fecha', 'ayudante_id', name='uq_jornada_ayudante_dia'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'fecha': self.fecha.isoformat(),
+            'chofer_id': self.chofer_id,
+            'chofer': self.chofer.username if self.chofer else None,
+            'ayudante_id': self.ayudante_id,
+            'ayudante': self.ayudante.username if self.ayudante else None,
+        }
+
+
 class SolicitudGeoref(db.Model):
     __tablename__ = 'solicitudes_georef'
     id = db.Column(db.Integer, primary_key=True)

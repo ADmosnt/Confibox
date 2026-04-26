@@ -2,7 +2,7 @@ import math
 import datetime
 from flask import Blueprint, jsonify, request
 from app import db
-from app.models import EntregaDiaria, EntregaDevolucion, Pedido, Lote, Producto
+from app.models import EntregaDiaria, EntregaDevolucion, Pedido, Lote, Producto, Usuario, JornadaEquipo
 from app.auth import require_role, get_current_user
 
 bp = Blueprint('entregas', __name__)
@@ -26,7 +26,7 @@ def _haversine(lat1, lon1, lat2, lon2):
 # ── Iniciar jornada (chofer confirms departure) ────────────────────────────────
 
 @bp.route('/iniciar-jornada', methods=['PUT'])
-@require_role('chofer', 'admin')
+@require_role('chofer', 'ayudante', 'admin')
 def iniciar_jornada():
     """Stamp salida_en on all pending entregas for today's chofer.
     Idempotent: re-calling after departure just returns current state."""
@@ -61,13 +61,22 @@ def iniciar_jornada():
     })
 
 
-# ── Mi ruta (chofer) ───────────────────────────────────────────────────────────
+# ── Mi ruta (chofer / ayudante) ────────────────────────────────────────────────
 
 @bp.route('/mi-ruta', methods=['GET'])
-@require_role('chofer', 'admin')
+@require_role('chofer', 'ayudante', 'admin')
 def mi_ruta():
     user = get_current_user()
-    chofer_id = user.id if user.rol == 'chofer' else request.args.get('chofer_id', user.id)
+    if user.rol == 'ayudante':
+        hoy = datetime.date.today()
+        asignacion = JornadaEquipo.query.filter_by(ayudante_id=user.id, fecha=hoy).first()
+        if not asignacion:
+            return jsonify({'error': 'Sin asignación de jornada para hoy'}), 404
+        chofer_id = asignacion.chofer_id
+    elif user.rol == 'chofer':
+        chofer_id = user.id
+    else:
+        chofer_id = request.args.get('chofer_id', user.id)
 
     entregas = (
         EntregaDiaria.query
@@ -90,15 +99,114 @@ def mi_ruta():
     return jsonify(result)
 
 
+# ── Mapa en vivo (admin) ───────────────────────────────────────────────────────
+
+@bp.route('/mapa-en-vivo', methods=['GET'])
+@require_role('admin')
+def mapa_en_vivo():
+    """Return all today's active deliveries grouped by chofer for live map."""
+    hoy = datetime.date.today()
+    entregas = (
+        EntregaDiaria.query
+        .filter(
+            EntregaDiaria.hora_registro >= datetime.datetime.combine(hoy, datetime.time.min),
+            EntregaDiaria.hora_registro <= datetime.datetime.combine(hoy, datetime.time.max),
+        )
+        .all()
+    )
+
+    # Group by chofer
+    by_chofer = {}
+    for e in entregas:
+        cid = e.chofer_id
+        if cid not in by_chofer:
+            by_chofer[cid] = {
+                'chofer_id': cid,
+                'chofer': e.chofer.username if e.chofer else str(cid),
+                'salida_en': e.salida_en.isoformat() if e.salida_en else None,
+                'paradas': [],
+            }
+        tienda = e.pedido.tienda if e.pedido else None
+        by_chofer[cid]['paradas'].append({
+            'entrega_id': e.id,
+            'tienda_id': tienda.id if tienda else None,
+            'tienda': tienda.razon_social if tienda else None,
+            'latitud': float(tienda.latitud) if tienda and tienda.latitud else None,
+            'longitud': float(tienda.longitud) if tienda and tienda.longitud else None,
+            'estado': e.estado,
+            'numero_pedido': e.pedido.numero_pedido if e.pedido else None,
+        })
+
+    result = list(by_chofer.values())
+    for r in result:
+        total = len(r['paradas'])
+        entregadas = sum(1 for p in r['paradas'] if p['estado'] == 'entregada')
+        r['total'] = total
+        r['entregadas'] = entregadas
+        r['pendientes'] = sum(1 for p in r['paradas'] if p['estado'] in ('pendiente', 'parcial'))
+    return jsonify(result)
+
+
+# ── Jornada Equipo ─────────────────────────────────────────────────────────────
+
+@bp.route('/jornada-equipo', methods=['GET'])
+@require_role('admin', 'almacenista')
+def list_jornada():
+    fecha_str = request.args.get('fecha')
+    if fecha_str:
+        try:
+            fecha = datetime.date.fromisoformat(fecha_str)
+        except ValueError:
+            return jsonify({'error': 'fecha inválida (YYYY-MM-DD)'}), 400
+    else:
+        fecha = datetime.date.today()
+    asignaciones = JornadaEquipo.query.filter_by(fecha=fecha).all()
+    return jsonify([a.to_dict() for a in asignaciones])
+
+
+@bp.route('/jornada-equipo', methods=['POST'])
+@require_role('admin')
+def create_jornada():
+    data = request.get_json() or {}
+    chofer_id = data.get('chofer_id')
+    ayudante_id = data.get('ayudante_id')
+    if not chofer_id or not ayudante_id:
+        return jsonify({'error': 'chofer_id y ayudante_id son requeridos'}), 400
+    chofer = Usuario.query.get_or_404(chofer_id)
+    if chofer.rol != 'chofer':
+        return jsonify({'error': 'El usuario indicado no tiene rol chofer'}), 400
+    ayudante = Usuario.query.get_or_404(ayudante_id)
+    if ayudante.rol != 'ayudante':
+        return jsonify({'error': 'El usuario indicado no tiene rol ayudante'}), 400
+    fecha_str = data.get('fecha')
+    fecha = datetime.date.fromisoformat(fecha_str) if fecha_str else datetime.date.today()
+    existing = JornadaEquipo.query.filter_by(fecha=fecha, ayudante_id=ayudante_id).first()
+    if existing:
+        return jsonify({'error': 'Este ayudante ya tiene asignación para esa fecha'}), 409
+    asig = JornadaEquipo(fecha=fecha, chofer_id=chofer_id, ayudante_id=ayudante_id)
+    db.session.add(asig)
+    db.session.commit()
+    return jsonify(asig.to_dict()), 201
+
+
+@bp.route('/jornada-equipo/<int:id>', methods=['DELETE'])
+@require_role('admin')
+def delete_jornada(id):
+    asig = JornadaEquipo.query.get_or_404(id)
+    db.session.delete(asig)
+    db.session.commit()
+    return '', 204
+
+
 # ── Listar entregas ────────────────────────────────────────────────────────────
 
 @bp.route('', methods=['GET'])
-@require_role('admin', 'almacenista', 'chofer')
+@require_role('admin', 'almacenista', 'chofer', 'ayudante')
 def list_entregas():
     user = get_current_user()
     q = EntregaDiaria.query
 
-    if user.rol == 'chofer':
+    if user.rol in ('chofer', 'ayudante'):
         q = q.filter(EntregaDiaria.chofer_id == user.id)
     else:
         chofer_id = request.args.get('chofer_id')
@@ -134,7 +242,7 @@ def get_entrega(id):
 # ── Check-in (registrar entrega) ───────────────────────────────────────────────
 
 @bp.route('/<int:id>/checkin', methods=['PUT'])
-@require_role('chofer', 'admin')
+@require_role('chofer', 'ayudante', 'admin')
 def checkin(id):
     entrega = EntregaDiaria.query.get_or_404(id)
     user = get_current_user()
@@ -200,7 +308,7 @@ def checkin(id):
 # ── Sync offline queue ─────────────────────────────────────────────────────────
 
 @bp.route('/sync', methods=['POST'])
-@require_role('chofer', 'admin')
+@require_role('chofer', 'ayudante', 'admin')
 def sync_offline():
     """Batch sync checkins queued while offline.
     Body: { "queue": [ { "entrega_id": int, "estado": str, "latitud": float,
@@ -269,7 +377,7 @@ def sync_offline():
 # ── Devoluciones ───────────────────────────────────────────────────────────────
 
 @bp.route('/<int:id>/devoluciones', methods=['POST'])
-@require_role('chofer', 'admin')
+@require_role('chofer', 'ayudante', 'admin')
 def create_devolucion(id):
     entrega = EntregaDiaria.query.get_or_404(id)
     user = get_current_user()

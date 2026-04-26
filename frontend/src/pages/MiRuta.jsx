@@ -6,6 +6,7 @@ import {
 import MapaTiendas from '../components/MapaTiendas'
 import useCurrentPosition from '../hooks/useCurrentPosition'
 import { useOfflineSync } from '../hooks/useOfflineSync'
+import { useWakeLock } from '../hooks/useWakeLock'
 import { Dialog, DialogContent } from '../components/ui/Dialog'
 import { ENTREGA_COLOR, ENTREGA_LABEL } from '../components/EstadoBadge'
 import { resizeImage, storePhoto } from '../utils/photoStore'
@@ -481,6 +482,10 @@ export default function MiRuta() {
   const { isOnline, queue, enqueue, syncNow, syncing } = useOfflineSync()
   const pendingIds = new Set(queue.map((q) => q.entrega_id))
 
+  // Keep screen on while there are pending deliveries
+  const pendientes = entregas.filter((e) => ['pendiente', 'parcial'].includes(localEstados[e.id] ?? e.estado)).length
+  useWakeLock(pendientes > 0)
+
   const load = async () => {
     setLoading(true)
     try {
@@ -539,7 +544,6 @@ export default function MiRuta() {
     }
   }
 
-  const pendientes  = entregas.filter((e) => ['pendiente', 'parcial'].includes(localEstados[e.id] ?? e.estado)).length
   const completadas = entregas.filter((e) => (localEstados[e.id] ?? e.estado) === 'entregada').length
   const tiendas     = entregas.filter((e) => e.tienda?.latitud != null).map((e) => e.tienda)
   const activeEntrega     = entregas.find((e) => e.id === checkinId)

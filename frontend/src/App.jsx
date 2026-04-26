@@ -19,6 +19,8 @@ import PedidoForm from './pages/PedidoForm'
 import MiRuta from './pages/MiRuta'
 import Entregas from './pages/Entregas'
 import SolicitudesGeoref from './pages/SolicitudesGeoref'
+import MapaEnVivo from './pages/MapaEnVivo'
+import JornadaEquipo from './pages/JornadaEquipo'
 import Usuarios from './pages/Usuarios'
 import Configuracion from './pages/Configuracion'
 
@@ -102,17 +104,31 @@ export default function App() {
                 </RequireAuth>
               } />
 
-              {/* Mi ruta (chofer) */}
+              {/* Mi ruta (chofer + ayudante) */}
               <Route path="mi-ruta" element={
-                <RequireAuth roles={['chofer', 'admin']}>
+                <RequireAuth roles={['chofer', 'ayudante', 'admin']}>
                   <MiRuta />
                 </RequireAuth>
               } />
 
               {/* Entregas */}
               <Route path="entregas" element={
-                <RequireAuth roles={['admin', 'almacenista', 'chofer']}>
+                <RequireAuth roles={['admin', 'almacenista', 'chofer', 'ayudante']}>
                   <Entregas />
+                </RequireAuth>
+              } />
+
+              {/* Mapa en vivo (admin) */}
+              <Route path="mapa-en-vivo" element={
+                <RequireAuth roles={['admin']}>
+                  <MapaEnVivo />
+                </RequireAuth>
+              } />
+
+              {/* Jornada equipo (admin) */}
+              <Route path="jornada-equipo" element={
+                <RequireAuth roles={['admin']}>
+                  <JornadaEquipo />
                 </RequireAuth>
               } />
 

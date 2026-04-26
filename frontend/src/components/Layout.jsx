@@ -10,6 +10,8 @@ const NAV = {
     { to: '/inventario',       label: 'Inventario' },
     { to: '/pedidos',          label: 'Pedidos' },
     { to: '/entregas',         label: 'Entregas' },
+    { to: '/mapa-en-vivo',     label: 'Mapa en Vivo' },
+    { to: '/jornada-equipo',   label: 'Jornada Equipo' },
     { to: '/solicitudes-georef', label: 'Solicitudes GPS' },
   ],
   vendedor: [
@@ -25,6 +27,10 @@ const NAV = {
     { to: '/pedidos',    label: 'Pedidos' },
   ],
   chofer: [
+    { to: '/mi-ruta',  label: 'Mi Ruta' },
+    { to: '/entregas', label: 'Mis Entregas' },
+  ],
+  ayudante: [
     { to: '/mi-ruta',  label: 'Mi Ruta' },
     { to: '/entregas', label: 'Mis Entregas' },
   ],
@@ -50,6 +56,7 @@ const ROL_LABEL = {
   facturacion:  'Facturación',
   almacenista:  'Almacén',
   chofer:       'Chofer',
+  ayudante:     'Ayudante',
 }
 
 export default function Layout() {
