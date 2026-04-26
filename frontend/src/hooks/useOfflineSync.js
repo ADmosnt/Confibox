@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
-import { syncOffline } from '../api'
+import { syncOffline, uploadFile } from '../api'
+import { loadPhoto, deletePhoto } from '../utils/photoStore'
 
 const QUEUE_KEY = 'confibox_sync_queue'
 
@@ -11,6 +12,24 @@ function loadQueue() {
 
 function saveQueue(q) {
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
+}
+
+// Upload pending photo blobs and inject foto_evidencia_url into items
+async function resolvePhotos(queue) {
+  return Promise.all(
+    queue.map(async (item) => {
+      if (!item.fotoBlobKey) return item
+      try {
+        const blob = await loadPhoto(item.fotoBlobKey)
+        if (!blob) return item
+        const r = await uploadFile(blob)
+        return { ...item, foto_evidencia_url: r.data.url }
+      } catch {
+        // Upload failed — send checkin without photo rather than block sync
+        return item
+      }
+    })
+  )
 }
 
 export function useOfflineSync() {
@@ -30,12 +49,24 @@ export function useOfflineSync() {
     syncingRef.current = true
     setSyncing(true)
     try {
-      const res = await syncOffline(q)
+      const resolved = await resolvePhotos(q)
+      const res = await syncOffline(resolved)
       const resultados = res.data.resultados ?? []
       const failedIds = resultados
         .filter((r) => !r.ok && !r.skipped)
         .map((r) => r.entrega_id)
       const okCount = resultados.filter((r) => r.ok || r.skipped).length
+
+      // Clean up IndexedDB blobs for successfully synced items
+      for (const item of q) {
+        if (item.fotoBlobKey) {
+          const result = resultados.find((r) => r.entrega_id === item.entrega_id)
+          if (result?.ok || result?.skipped) {
+            await deletePhoto(item.fotoBlobKey).catch(() => {})
+          }
+        }
+      }
+
       setQueue((prev) =>
         failedIds.length > 0
           ? prev.filter((item) => failedIds.includes(item.entrega_id))
@@ -74,6 +105,7 @@ export function useOfflineSync() {
       motivo_incidencia: item.motivo_incidencia ?? null,
       observacion: item.observacion ?? null,
       hora_local: new Date().toISOString(),
+      fotoBlobKey: item.fotoBlobKey ?? null,
     }
     // Write synchronously to localStorage so doSync always reads latest
     setQueue((q) => {

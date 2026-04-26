@@ -241,6 +241,7 @@ def sync_offline():
         entrega.estado = estado
         entrega.motivo_incidencia = item.get('motivo_incidencia')
         entrega.observacion = item.get('observacion')
+        entrega.foto_evidencia_url = item.get('foto_evidencia_url')
         lat = item.get('latitud')
         lon = item.get('longitud')
         if lat is not None and lon is not None:

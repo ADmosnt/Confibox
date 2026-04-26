@@ -8,6 +8,7 @@ import useCurrentPosition from '../hooks/useCurrentPosition'
 import { useOfflineSync } from '../hooks/useOfflineSync'
 import { Dialog, DialogContent } from '../components/ui/Dialog'
 import { ENTREGA_COLOR, ENTREGA_LABEL } from '../components/EstadoBadge'
+import { resizeImage, storePhoto } from '../utils/photoStore'
 
 const ROUTE_CACHE_KEY = 'confibox_ruta_cache'
 
@@ -44,8 +45,9 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
   const [motivo, setMotivo] = useState('')
   const [observacion, setObservacion] = useState('')
   const [alertaDistancia, setAlertaDistancia] = useState(null)
-  const [fotoFile, setFotoFile] = useState(null)
+  const [fotoBlob, setFotoBlob] = useState(null)
   const [fotoPreview, setFotoPreview] = useState(null)
+  const [fotoResizing, setFotoResizing] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => { getPosition() }, [])
@@ -55,11 +57,20 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
 
   useEffect(() => () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview) }, [fotoPreview])
 
-  const handleFotoChange = (e) => {
+  const handleFotoChange = async (e) => {
     const file = e.target.files[0]
     if (!file) return
-    setFotoFile(file)
-    setFotoPreview(URL.createObjectURL(file))
+    setFotoResizing(true)
+    try {
+      const resized = await resizeImage(file)
+      if (fotoPreview) URL.revokeObjectURL(fotoPreview)
+      setFotoBlob(resized)
+      setFotoPreview(URL.createObjectURL(resized))
+    } catch {
+      toast.error('Error al procesar la imagen')
+    } finally {
+      setFotoResizing(false)
+    }
   }
 
   const submit = async () => {
@@ -75,7 +86,12 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
 
     // Check offline before calling API to avoid the interceptor's generic toast
     if (!navigator.onLine) {
-      onOffline(payload)
+      let fotoBlobKey = null
+      if (fotoBlob) {
+        fotoBlobKey = `foto_${entrega.id}_${Date.now()}`
+        await storePhoto(fotoBlobKey, fotoBlob)
+      }
+      onOffline({ ...payload, fotoBlobKey })
       toast('Sin conexión — se sincronizará al reconectarte', { icon: '📴' })
       setSubmitting(false)
       return
@@ -83,8 +99,8 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
 
     try {
       let foto_evidencia_url = undefined
-      if (fotoFile) {
-        const r = await uploadFile(fotoFile)
+      if (fotoBlob) {
+        const r = await uploadFile(fotoBlob)
         foto_evidencia_url = r.data.url
       }
       await checkinEntrega(entrega.id, {
@@ -103,8 +119,13 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
       if (data?.requiere_motivo) {
         setAlertaDistancia(data.distancia_metros)
       } else if (!err.response) {
-        // Network error mid-request
-        onOffline(payload)
+        // Network error mid-request — store photo and queue
+        let fotoBlobKey = null
+        if (fotoBlob) {
+          fotoBlobKey = `foto_${entrega.id}_${Date.now()}`
+          await storePhoto(fotoBlobKey, fotoBlob)
+        }
+        onOffline({ ...payload, fotoBlobKey })
         toast('Sin conexión — se sincronizará al reconectarte', { icon: '📴' })
         onClose()
       } else {
@@ -197,16 +218,16 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
             {fotoPreview ? (
               <div className="space-y-1.5">
                 <img src={fotoPreview} alt="Evidencia" className="w-full max-h-40 object-cover rounded-lg border border-gray-200" />
-                <button type="button" onClick={() => { setFotoFile(null); setFotoPreview(null) }} className="text-xs text-red-500 hover:underline">
+                <button type="button" onClick={() => { setFotoBlob(null); setFotoPreview(null) }} className="text-xs text-red-500 hover:underline">
                   Quitar foto
                 </button>
               </div>
             ) : (
               <label className="flex items-center gap-2 cursor-pointer w-fit">
-                <span className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
-                  📷 Tomar foto
+                <span className={`text-sm border border-gray-300 rounded-lg px-3 py-1.5 ${fotoResizing ? 'opacity-50' : 'hover:bg-gray-50'}`}>
+                  {fotoResizing ? '⏳ Procesando...' : '📷 Tomar foto'}
                 </span>
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoChange} />
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFotoChange} disabled={fotoResizing} />
               </label>
             )}
           </div>
@@ -217,7 +238,7 @@ function CheckinModal({ entrega, onClose, onDone, onOffline }) {
             </button>
             <button
               onClick={submit}
-              disabled={submitting || (necesitaMotivo && !motivo) || (necesitaFoto && !fotoFile)}
+              disabled={submitting || fotoResizing || (necesitaMotivo && !motivo) || (necesitaFoto && !fotoBlob)}
               className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               {submitting ? 'Guardando...' : 'Confirmar'}
