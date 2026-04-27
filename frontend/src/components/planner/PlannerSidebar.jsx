@@ -1,19 +1,26 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { toast } from 'sonner'
-import AsignarLotes from './AsignarLotes'
 import { ubicarLote } from '../../api'
+import {
+  useDataStore, useCanvasStore,
+  unplacedUbicacionesSelector, useShallow,
+} from '../../stores/almacenStore'
+import RackElevation from './RackElevation'
+import AsignarLotes from './AsignarLotes'
 
 const COLORS = ['#DBEAFE', '#D1FAE5', '#FEF3C7', '#FCE7F3', '#EDE9FE', '#FFEDD5', '#CFFAFE', '#E0E7FF']
-
 const inp = 'w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
-function ZonaForm({ onCreate }) {
+// ── Forms ──────────────────────────────────────────────────────────────────
+
+function ZonaForm() {
+  const addZona = useDataStore((s) => s.addZona)
   const [nombre, setNombre] = useState('')
   const [color, setColor] = useState(COLORS[0])
   const submit = async (e) => {
     e.preventDefault()
     if (!nombre.trim()) return toast.error('Nombre requerido')
-    const ok = await onCreate({ nombre: nombre.trim(), color, x: 60, y: 60, width: 240, height: 180 })
+    const ok = await addZona({ nombre: nombre.trim(), color, x: 60, y: 60, width: 240, height: 180 })
     if (ok) setNombre('')
   }
   return (
@@ -34,7 +41,9 @@ function ZonaForm({ onCreate }) {
   )
 }
 
-function UbicacionForm({ zonas, onCreate }) {
+function UbicacionForm() {
+  const zonas = useDataStore((s) => s.zonas)
+  const addUbicacion = useDataStore((s) => s.addUbicacion)
   const [codigo, setCodigo] = useState('')
   const [tipo, setTipo] = useState('rack')
   const [niveles, setNiveles] = useState(4)
@@ -43,7 +52,7 @@ function UbicacionForm({ zonas, onCreate }) {
   const submit = async (e) => {
     e.preventDefault()
     if (!codigo.trim()) return toast.error('Código requerido')
-    const ok = await onCreate({
+    const ok = await addUbicacion({
       codigo: codigo.trim(),
       tipo,
       niveles: tipo === 'piso' ? 1 : Number(niveles),
@@ -82,8 +91,10 @@ function UbicacionForm({ zonas, onCreate }) {
   )
 }
 
-function UnplacedList({ ubicaciones }) {
-  const unplaced = ubicaciones.filter((u) => u.x == null)
+// ── Lists ──────────────────────────────────────────────────────────────────
+
+function UnplacedList() {
+  const unplaced = useDataStore(useShallow(unplacedUbicacionesSelector))
   if (unplaced.length === 0) return null
   return (
     <div className="border border-orange-200 bg-orange-50 rounded-lg p-3">
@@ -121,80 +132,189 @@ function ListItem({ children, selected, onClick, onRemove }) {
   )
 }
 
-function InventarioPanel({ selection, ubicaciones, zonas, stock, onRefresh }) {
-  const [asignando, setAsignando] = useState(null) // { ubicacion, nivel }
+const ZonasList = memo(function ZonasList() {
+  const zonas = useDataStore((s) => s.zonas)
+  const editMode = useCanvasStore((s) => s.editMode)
+  const selection = useCanvasStore((s) => s.selection)
+  const select = useCanvasStore((s) => s.selectZona)
+  const removeZona = useDataStore((s) => s.removeZona)
+  const clearSelection = useCanvasStore((s) => s.clearSelection)
+
+  const handleRemove = async (id) => {
+    if (!window.confirm('¿Eliminar esta zona?')) return
+    await removeZona(id)
+    if (selection?.type === 'zona' && selection.id === id) clearSelection()
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+        Zonas ({zonas.length})
+      </p>
+      <div className="space-y-0.5 max-h-72 overflow-y-auto">
+        {zonas.map((z) => (
+          <ListItem
+            key={z.id}
+            selected={selection?.type === 'zona' && selection.id === z.id}
+            onClick={() => select(z.id)}
+            onRemove={editMode ? () => handleRemove(z.id) : null}
+          >
+            <span className="inline-block w-3 h-3 rounded mr-2 align-middle"
+              style={{ background: z.color, border: '1px solid #CBD5E1' }} />
+            <span className="font-medium">{z.nombre}</span>
+          </ListItem>
+        ))}
+        {zonas.length === 0 && (
+          <p className="text-xs text-gray-400 py-2">Sin zonas creadas</p>
+        )}
+      </div>
+    </div>
+  )
+})
+
+const UbicacionesList = memo(function UbicacionesList() {
+  const placedUbicaciones = useDataStore(
+    useShallow((s) => s.ubicaciones.filter((u) => u.x != null))
+  )
+  const editMode = useCanvasStore((s) => s.editMode)
+  const selection = useCanvasStore((s) => s.selection)
+  const select = useCanvasStore((s) => s.selectUbicacion)
+  const removeUbicacion = useDataStore((s) => s.removeUbicacion)
+  const clearSelection = useCanvasStore((s) => s.clearSelection)
+
+  const handleRemove = async (id) => {
+    if (!window.confirm('¿Eliminar esta ubicación?')) return
+    await removeUbicacion(id)
+    if (selection?.type === 'ubicacion' && selection.id === id) clearSelection()
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3">
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+        Ubicaciones ({placedUbicaciones.length} en mapa)
+      </p>
+      <div className="space-y-0.5 max-h-72 overflow-y-auto">
+        {placedUbicaciones.map((u) => (
+          <ListItem
+            key={u.id}
+            selected={selection?.type === 'ubicacion' && selection.id === u.id}
+            onClick={() => select(u.id)}
+            onRemove={editMode ? () => handleRemove(u.id) : null}
+          >
+            <span className="font-medium">{u.codigo}</span>
+            <span className="text-xs text-gray-400 ml-2">
+              {u.tipo === 'rack' ? `${u.niveles}N` : 'piso'}
+              {u.zona && ` · ${u.zona}`}
+            </span>
+          </ListItem>
+        ))}
+      </div>
+    </div>
+  )
+})
+
+// ── Inventario panel — uses elevation view for racks ──────────────────────
+
+function InventarioPanel() {
+  const selection = useCanvasStore((s) => s.selection)
+  const ubicacion = useDataStore(
+    (s) => selection?.type === 'ubicacion' ? s.ubicaciones.find((u) => u.id === selection.id) : null
+  )
+  const zona = useDataStore(
+    (s) => selection?.type === 'zona' ? s.zonas.find((z) => z.id === selection.id) : null
+  )
+  const ubicacionesEnZona = useDataStore(
+    useShallow((s) => zona ? s.ubicaciones.filter((u) => u.zona_id === zona.id) : [])
+  )
+  const slotLotes = useDataStore(useShallow((s) => {
+    if (!ubicacion) return []
+    const nivel = selection.nivel ?? 0
+    return s.stock.slots[`${ubicacion.id}:${ubicacion.tipo === 'rack' ? nivel : 0}`] ?? []
+  }))
+  const refreshStock = useDataStore((s) => s.refreshStock)
+
+  const [asignando, setAsignando] = useState(false)
 
   const detachLote = async (lote) => {
     try {
       await ubicarLote(lote.id, { ubicacion_id: null })
-      toast.success('Lote retirado del slot')
-      onRefresh()
+      toast.success('Lote retirado')
+      refreshStock()
     } catch (err) {
-      toast.error(err.response?.data?.error ?? 'Error al quitar lote')
+      toast.error(err.response?.data?.error ?? 'Error')
     }
   }
 
   if (!selection) {
     return (
       <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center text-sm text-gray-400">
-        Selecciona una zona o ubicación
+        Click en una zona o ubicación del mapa
       </div>
     )
   }
 
-  if (selection.type === 'zona') {
-    const z = zonas.find((zz) => zz.id === selection.id)
-    if (!z) return null
-    const ubicacionesEnZona = ubicaciones.filter((u) => u.zona_id === z.id)
+  if (zona) {
     return (
       <div className="border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <span className="w-4 h-4 rounded" style={{ background: z.color, border: '1px solid #CBD5E1' }} />
-          <p className="font-semibold text-gray-800">{z.nombre}</p>
+          <span className="w-4 h-4 rounded" style={{ background: zona.color, border: '1px solid #CBD5E1' }} />
+          <p className="font-semibold text-gray-800">{zona.nombre}</p>
         </div>
-        <p className="text-xs text-gray-500">{ubicacionesEnZona.length} ubicación(es) en esta zona</p>
-        {ubicacionesEnZona.map((u) => (
-          <div key={u.id} className="text-xs border-l-2 border-gray-200 pl-2">
-            <span className="font-medium">{u.codigo}</span>
-            <span className="text-gray-400 ml-2">
-              {u.tipo === 'rack' ? `${u.niveles} niveles` : 'piso'}
-            </span>
-          </div>
-        ))}
+        <p className="text-xs text-gray-500">{ubicacionesEnZona.length} ubicación(es)</p>
+        <div className="space-y-1">
+          {ubicacionesEnZona.map((u) => (
+            <div key={u.id} className="text-xs border-l-2 border-gray-200 pl-2">
+              <span className="font-medium">{u.codigo}</span>
+              <span className="text-gray-400 ml-2">
+                {u.tipo === 'rack' ? `${u.niveles} niveles` : 'piso'}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
 
-  // ubicacion
-  const u = ubicaciones.find((uu) => uu.id === selection.id)
-  if (!u) return null
+  if (!ubicacion) return null
 
-  const renderNivel = (nivel) => {
-    const key = `${u.id}:${nivel || 0}`
-    const lotes = stock.slots[key] ?? []
-    const isSelected = (selection.nivel ?? null) === (nivel || null)
-    return (
-      <div key={nivel ?? 'piso'} className={`border rounded p-2 ${isSelected ? 'border-blue-400 bg-blue-50' : 'border-gray-100'}`}>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-bold text-gray-700">
-            {u.tipo === 'rack' ? `Nivel N${nivel}` : 'Piso'}
-          </span>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">{lotes.length} lote(s)</span>
+  const isRack = ubicacion.tipo === 'rack'
+  const slotLabel = isRack
+    ? (selection.nivel ? `Nivel N${selection.nivel}` : 'Selecciona un nivel')
+    : 'Piso'
+  const canAssign = !isRack || selection.nivel != null
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+      <div>
+        <p className="font-semibold text-gray-800">{ubicacion.codigo}</p>
+        <p className="text-xs text-gray-500">
+          {isRack ? `Estantería · ${ubicacion.niveles} niveles` : 'Piso (paleta)'}
+          {ubicacion.zona && ` · ${ubicacion.zona}`}
+        </p>
+      </div>
+
+      {isRack && <RackElevation ubicacion={ubicacion} />}
+
+      <div className="border-t pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-medium text-gray-700">{slotLabel}</p>
+          {canAssign && (
             <button
-              onClick={() => setAsignando({ ubicacion: u, nivel: u.tipo === 'rack' ? nivel : null })}
+              onClick={() => setAsignando(true)}
               className="text-xs text-blue-600 hover:underline"
             >
-              + Asignar
+              + Asignar lotes
             </button>
-          </div>
+          )}
         </div>
-        {lotes.length === 0 ? (
-          <p className="text-xs text-gray-400">Vacío</p>
+        {!canAssign ? (
+          <p className="text-xs text-gray-400">Click en un nivel del alzado arriba</p>
+        ) : slotLotes.length === 0 ? (
+          <p className="text-xs text-gray-400">Sin lotes en este slot</p>
         ) : (
-          <div className="space-y-1">
-            {lotes.map((l) => (
-              <div key={l.id} className="text-xs flex items-start gap-2 group">
+          <div className="space-y-1.5 max-h-60 overflow-y-auto">
+            {slotLotes.map((l) => (
+              <div key={l.id} className="text-xs flex items-start gap-2 group bg-gray-50 rounded p-1.5">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-800 truncate">{l.descripcion}</p>
                   <p className="text-gray-500">
@@ -211,7 +331,7 @@ function InventarioPanel({ selection, ubicaciones, zonas, stock, onRefresh }) {
                 </div>
                 <button
                   onClick={() => detachLote(l)}
-                  className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
                   title="Quitar de este slot"
                 >
                   ×
@@ -221,43 +341,25 @@ function InventarioPanel({ selection, ubicaciones, zonas, stock, onRefresh }) {
           </div>
         )}
       </div>
-    )
-  }
 
-  return (
-    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="font-semibold text-gray-800">{u.codigo}</p>
-          <p className="text-xs text-gray-500">
-            {u.tipo === 'rack' ? `Estantería · ${u.niveles} niveles` : 'Piso (paleta)'}
-            {u.zona && ` · ${u.zona}`}
-          </p>
-        </div>
-      </div>
-      <div className="space-y-2 max-h-96 overflow-y-auto">
-        {u.tipo === 'rack'
-          ? Array.from({ length: u.niveles }, (_, i) => u.niveles - i).map(renderNivel)
-          : renderNivel(null)}
-      </div>
-
-      {asignando && (
+      {asignando && canAssign && (
         <AsignarLotes
-          ubicacion={asignando.ubicacion}
-          nivel={asignando.nivel}
-          onAssigned={onRefresh}
-          onClose={() => setAsignando(null)}
+          ubicacion={ubicacion}
+          nivel={isRack ? selection.nivel : null}
+          onAssigned={refreshStock}
+          onClose={() => setAsignando(false)}
         />
       )}
     </div>
   )
 }
 
-export default function PlannerSidebar({
-  data, selection, editMode,
-  onSelectFromList, onRemoveZona, onRemoveUbicacion,
-}) {
+// ── Sidebar shell ─────────────────────────────────────────────────────────
+
+export default function PlannerSidebar() {
+  const editMode = useCanvasStore((s) => s.editMode)
   const [tab, setTab] = useState('inventario')
+
   const tabBtn = (key, label, icon) => (
     <button
       onClick={() => setTab(key)}
@@ -277,69 +379,20 @@ export default function PlannerSidebar({
         {tabBtn('zonas', 'Zonas', '🏷')}
       </div>
 
-      {tab === 'inventario' && (
-        <InventarioPanel
-          selection={selection}
-          ubicaciones={data.ubicaciones}
-          zonas={data.zonas}
-          stock={data.stock}
-          onRefresh={data.refreshStock}
-        />
-      )}
+      {tab === 'inventario' && <InventarioPanel />}
 
       {tab === 'ubicaciones' && (
         <>
-          {editMode && <UbicacionForm zonas={data.zonas} onCreate={data.addUbicacion} />}
-          <UnplacedList ubicaciones={data.ubicaciones} />
-          <div className="border border-gray-200 rounded-lg p-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-              Ubicaciones ({data.ubicaciones.filter((u) => u.x != null).length} en mapa)
-            </p>
-            <div className="space-y-0.5 max-h-72 overflow-y-auto">
-              {data.ubicaciones.filter((u) => u.x != null).map((u) => (
-                <ListItem
-                  key={u.id}
-                  selected={selection?.type === 'ubicacion' && selection.id === u.id}
-                  onClick={() => onSelectFromList({ type: 'ubicacion', id: u.id })}
-                  onRemove={editMode ? () => onRemoveUbicacion(u.id) : null}
-                >
-                  <span className="font-medium">{u.codigo}</span>
-                  <span className="text-xs text-gray-400 ml-2">
-                    {u.tipo === 'rack' ? `${u.niveles}N` : 'piso'}
-                    {u.zona && ` · ${u.zona}`}
-                  </span>
-                </ListItem>
-              ))}
-            </div>
-          </div>
+          {editMode && <UbicacionForm />}
+          <UnplacedList />
+          <UbicacionesList />
         </>
       )}
 
       {tab === 'zonas' && (
         <>
-          {editMode && <ZonaForm onCreate={data.addZona} />}
-          <div className="border border-gray-200 rounded-lg p-3">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-              Zonas ({data.zonas.length})
-            </p>
-            <div className="space-y-0.5 max-h-72 overflow-y-auto">
-              {data.zonas.map((z) => (
-                <ListItem
-                  key={z.id}
-                  selected={selection?.type === 'zona' && selection.id === z.id}
-                  onClick={() => onSelectFromList({ type: 'zona', id: z.id })}
-                  onRemove={editMode ? () => onRemoveZona(z.id) : null}
-                >
-                  <span className="inline-block w-3 h-3 rounded mr-2 align-middle"
-                    style={{ background: z.color, border: '1px solid #CBD5E1' }} />
-                  <span className="font-medium">{z.nombre}</span>
-                </ListItem>
-              ))}
-              {data.zonas.length === 0 && (
-                <p className="text-xs text-gray-400 py-2">Sin zonas creadas</p>
-              )}
-            </div>
-          </div>
+          {editMode && <ZonaForm />}
+          <ZonasList />
         </>
       )}
     </div>

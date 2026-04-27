@@ -1,37 +1,46 @@
 import { useEffect, useRef, useState } from 'react'
-import { Stage, Layer, Rect, Text } from 'react-konva'
+import { Stage, Layer } from 'react-konva'
 import ZonaShape from './ZonaShape'
 import UbicacionShape from './UbicacionShape'
+import {
+  useDataStore, useCanvasStore,
+  placedUbicacionIdsSelector, zonaIdsSelector, useShallow,
+} from '../../stores/almacenStore'
 
 const CANVAS_W = 1200
 const CANVAS_H = 700
 const GRID = 25
 
-function GridBackground() {
-  // Render grid as a single set of light dots — much cheaper than full lines
-  const dots = []
-  for (let x = 0; x <= CANVAS_W; x += GRID) {
-    for (let y = 0; y <= CANVAS_H; y += GRID) {
-      dots.push({ x, y })
-    }
-  }
-  return (
-    <>
-      <Rect x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill="#F8FAFC" listening={false} />
-      {dots.map((d, i) => (
-        <Rect key={i} x={d.x} y={d.y} width={1} height={1} fill="#CBD5E1" listening={false} />
-      ))}
-    </>
-  )
+// CSS dot-grid background — rendered by the GPU as a single repeating pattern.
+// Replaces the previous Konva-Rect grid (~1300 nodes) with O(1) cost.
+const gridStyle = {
+  backgroundColor: '#F8FAFC',
+  backgroundImage: 'radial-gradient(circle, #CBD5E1 1px, transparent 1px)',
+  backgroundSize: `${GRID}px ${GRID}px`,
+  backgroundPosition: '0 0',
 }
 
-export default function PlannerCanvas({
-  zonas, ubicaciones, stockBySlot,
-  selection, onSelect, onMoveZona, onMoveUbicacion,
-  editMode, onDropFromSidebar,
-}) {
+function snap(n) { return Math.round(n / GRID) * GRID }
+
+// Convert client (clientX, clientY) into Konva world coords using the stage's
+// own transform — handles scale, pan, and zoom natively without magic numbers.
+function clientToWorld(stage, clientX, clientY) {
+  const rect = stage.container().getBoundingClientRect()
+  const transform = stage.getAbsoluteTransform().copy().invert()
+  return transform.point({ x: clientX - rect.left, y: clientY - rect.top })
+}
+
+export default function PlannerCanvas() {
+  const stageRef = useRef()
   const containerRef = useRef()
   const [scale, setScale] = useState(1)
+
+  // Subscribe ONLY to ID lists (shallow comparison) — when a ubicacion's
+  // position changes, this parent does NOT re-render because the IDs are stable.
+  const zonaIds = useDataStore(useShallow(zonaIdsSelector))
+  const ubicacionIds = useDataStore(useShallow(placedUbicacionIdsSelector))
+  const editMode = useCanvasStore((s) => s.editMode)
+  const clearSelection = useCanvasStore((s) => s.clearSelection)
 
   useEffect(() => {
     const measure = () => {
@@ -44,34 +53,41 @@ export default function PlannerCanvas({
     return () => window.removeEventListener('resize', measure)
   }, [])
 
-  // Snap to GRID when dragging
-  const snap = (val) => Math.round(val / GRID) * GRID
-
   const handleStageClick = (e) => {
-    if (e.target === e.target.getStage()) onSelect(null)
+    if (e.target === e.target.getStage()) clearSelection()
   }
 
-  // Native HTML5 drop handler — sidebar drags an ubicacion id onto the canvas
   const handleNativeDrop = (e) => {
     e.preventDefault()
     if (!editMode) return
     const id = Number(e.dataTransfer.getData('text/x-ubicacion-id'))
     if (!id) return
-    const rect = containerRef.current.getBoundingClientRect()
-    const x = snap((e.clientX - rect.left) / scale - 40)
-    const y = snap((e.clientY - rect.top) / scale - 30)
-    onDropFromSidebar(id, { x: Math.max(0, x), y: Math.max(0, y) })
+
+    const stage = stageRef.current
+    if (!stage) return
+
+    // Read the ubicacion's actual size from the store — no hardcoded offsets.
+    const u = useDataStore.getState().ubicaciones.find((uu) => uu.id === id)
+    if (!u) return
+
+    const world = clientToWorld(stage, e.clientX, e.clientY)
+    // Center the ubicacion on the cursor using ITS OWN size
+    const x = Math.max(0, snap(world.x - u.width / 2))
+    const y = Math.max(0, snap(world.y - u.height / 2))
+    useDataStore.getState().patchUbicacion(id, { x, y })
+    useCanvasStore.getState().selectUbicacion(id)
   }
 
   return (
     <div
       ref={containerRef}
-      className="bg-white border border-gray-200 rounded-lg overflow-hidden"
-      style={{ touchAction: 'none' }}
+      className="border border-gray-200 rounded-lg overflow-hidden"
+      style={{ ...gridStyle, touchAction: 'none' }}
       onDragOver={(e) => editMode && e.preventDefault()}
       onDrop={handleNativeDrop}
     >
       <Stage
+        ref={stageRef}
         width={CANVAS_W * scale}
         height={CANVAS_H * scale}
         scaleX={scale}
@@ -79,56 +95,11 @@ export default function PlannerCanvas({
         onMouseDown={handleStageClick}
         onTouchStart={handleStageClick}
       >
-        <Layer listening={false}>
-          <GridBackground />
-        </Layer>
-
-        {/* Zonas in their own layer — sit BEHIND ubicaciones */}
         <Layer>
-          {zonas.map((z) => (
-            <ZonaShape
-              key={z.id}
-              zona={z}
-              selected={selection?.type === 'zona' && selection.id === z.id}
-              editMode={editMode}
-              onSelect={(id) => onSelect({ type: 'zona', id })}
-              onChange={(id, patch) => onMoveZona(id, {
-                ...patch,
-                ...(patch.x != null ? { x: snap(patch.x) } : {}),
-                ...(patch.y != null ? { y: snap(patch.y) } : {}),
-              })}
-            />
-          ))}
+          {zonaIds.map((id) => <ZonaShape key={id} id={id} />)}
         </Layer>
-
-        {/* Ubicaciones on top */}
         <Layer>
-          {ubicaciones.filter((u) => u.x != null).map((u) => (
-            <UbicacionShape
-              key={u.id}
-              ubicacion={u}
-              selected={selection?.type === 'ubicacion' && selection.id === u.id}
-              selectedNivel={selection?.type === 'ubicacion' && selection.id === u.id ? selection.nivel : null}
-              editMode={editMode}
-              stockBySlot={stockBySlot}
-              onSelect={(id, nivel) => onSelect({ type: 'ubicacion', id, nivel })}
-              onChange={(id, patch) => onMoveUbicacion(id, {
-                ...patch,
-                ...(patch.x != null ? { x: snap(patch.x) } : {}),
-                ...(patch.y != null ? { y: snap(patch.y) } : {}),
-              })}
-            />
-          ))}
-          {ubicaciones.filter((u) => u.x != null).length === 0 && (
-            <Text
-              text="Arrastra ubicaciones desde el panel lateral para posicionarlas"
-              x={CANVAS_W / 2 - 200}
-              y={CANVAS_H / 2 - 8}
-              fontSize={13}
-              fill="#94A3B8"
-              listening={false}
-            />
-          )}
+          {ubicacionIds.map((id) => <UbicacionShape key={id} id={id} />)}
         </Layer>
       </Stage>
     </div>

@@ -1,32 +1,23 @@
-import { useState } from 'react'
-import { toast } from 'sonner'
+import { useEffect } from 'react'
 import PlannerCanvas from '../components/planner/PlannerCanvas'
 import PlannerSidebar from '../components/planner/PlannerSidebar'
-import { useAlmacenData } from '../hooks/useAlmacenData'
+import { useDataStore, useCanvasStore, useShallow } from '../stores/almacenStore'
+
+// Orchestrator: just composes layout. All state/data flows through Zustand
+// stores, components subscribe atomically — no prop drilling.
 
 export default function AlmacenPlanner() {
-  const data = useAlmacenData()
-  const [editMode, setEditMode] = useState(false)
-  // selection: null | { type: 'zona', id } | { type: 'ubicacion', id, nivel }
-  const [selection, setSelection] = useState(null)
+  const loadAll = useDataStore((s) => s.loadAll)
+  const loading = useDataStore((s) => s.loading)
+  const editMode = useCanvasStore((s) => s.editMode)
+  const toggleEditMode = useCanvasStore((s) => s.toggleEditMode)
+  const counts = useDataStore(useShallow((s) => ({
+    ubicaciones: s.ubicaciones.length,
+    zonas: s.zonas.length,
+    sinUbicar: s.stock.sin_ubicar?.length ?? 0,
+  })))
 
-  const handleDropFromSidebar = async (id, { x, y }) => {
-    await data.patchUbicacion(id, { x, y })
-    setSelection({ type: 'ubicacion', id })
-    toast.success('Ubicación posicionada')
-  }
-
-  const handleRemoveZona = async (id) => {
-    if (!window.confirm('¿Eliminar esta zona? Las ubicaciones que la usaban quedarán sin zona.')) return
-    await data.removeZona(id)
-    if (selection?.type === 'zona' && selection.id === id) setSelection(null)
-  }
-
-  const handleRemoveUbicacion = async (id) => {
-    if (!window.confirm('¿Eliminar esta ubicación?')) return
-    await data.removeUbicacion(id)
-    if (selection?.type === 'ubicacion' && selection.id === id) setSelection(null)
-  }
+  useEffect(() => { loadAll() }, [loadAll])
 
   return (
     <div>
@@ -34,12 +25,12 @@ export default function AlmacenPlanner() {
         <div>
           <h2 className="text-xl font-bold text-gray-800">Planner de Almacén</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            {data.ubicaciones.length} ubicaciones · {data.zonas.length} zonas · {data.stock.sin_ubicar?.length ?? 0} lotes sin ubicar
+            {counts.ubicaciones} ubicaciones · {counts.zonas} zonas · {counts.sinUbicar} lotes sin ubicar
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => { setEditMode((v) => !v); setSelection(null) }}
+            onClick={toggleEditMode}
             className={`text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors ${
               editMode
                 ? 'bg-blue-600 text-white border-blue-600'
@@ -48,43 +39,25 @@ export default function AlmacenPlanner() {
           >
             {editMode ? '✏️ Modo Diseño' : '👁 Modo Inventario'}
           </button>
-          <button onClick={data.loadAll} className="text-sm text-blue-600 hover:underline">
+          <button onClick={loadAll} className="text-sm text-blue-600 hover:underline">
             Actualizar
           </button>
         </div>
       </div>
 
-      {data.loading ? (
+      {loading ? (
         <p className="text-gray-400 text-sm">Cargando plano...</p>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
           <div className="min-w-0">
-            <PlannerCanvas
-              zonas={data.zonas}
-              ubicaciones={data.ubicaciones}
-              stockBySlot={data.stock.slots}
-              selection={selection}
-              onSelect={setSelection}
-              onMoveZona={data.patchZona}
-              onMoveUbicacion={data.patchUbicacion}
-              editMode={editMode}
-              onDropFromSidebar={handleDropFromSidebar}
-            />
+            <PlannerCanvas />
             <p className="text-xs text-gray-400 mt-1.5">
               {editMode
-                ? 'Modo Diseño · arrastra para mover, esquinas para redimensionar, click derecho ×  para eliminar'
-                : 'Modo Inventario · click en zona, ubicación o nivel para ver detalle'}
+                ? 'Vista en planta · arrastra zonas y ubicaciones para moverlas'
+                : 'Vista en planta · click en una ubicación para ver su alzado y stock'}
             </p>
           </div>
-
-          <PlannerSidebar
-            data={data}
-            selection={selection}
-            editMode={editMode}
-            onSelectFromList={setSelection}
-            onRemoveZona={handleRemoveZona}
-            onRemoveUbicacion={handleRemoveUbicacion}
-          />
+          <PlannerSidebar />
         </div>
       )}
     </div>
