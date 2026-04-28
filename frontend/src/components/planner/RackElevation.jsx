@@ -33,6 +33,17 @@ function RackElevation({ ubicacion }) {
           {niveles.map((nivel) => {
             const lotes = stockSlots[`${ubicacion.id}:${nivel}`] ?? []
             const isSelected = selectedNivel === nivel
+
+            // Aggregate by producto_id — one badge per SKU with combined bultos count
+            const byProducto = {}
+            lotes.forEach((l) => {
+              if (!byProducto[l.producto_id]) {
+                byProducto[l.producto_id] = { codigo: l.codigo, descripcion: l.descripcion, total: 0 }
+              }
+              byProducto[l.producto_id].total += l.cantidad_bultos
+            })
+            const aggregated = Object.values(byProducto)
+
             return (
               <button
                 key={nivel}
@@ -48,21 +59,21 @@ function RackElevation({ ubicacion }) {
                   N{nivel}
                 </span>
                 <div className="flex-1 mx-2 flex items-center gap-1 flex-wrap">
-                  {lotes.length === 0 ? (
+                  {aggregated.length === 0 ? (
                     <span className="text-xs text-gray-400 italic">vacío</span>
                   ) : (
-                    lotes.slice(0, 4).map((l) => (
+                    aggregated.slice(0, 4).map((p) => (
                       <span
-                        key={l.id}
+                        key={p.codigo}
                         className="text-xs bg-white border border-amber-300 rounded px-1.5 py-0.5 text-gray-700 max-w-[140px] truncate"
-                        title={l.descripcion}
+                        title={`${p.descripcion} — ${p.total} bultos`}
                       >
-                        {l.codigo} ×{l.cantidad_bultos}
+                        {p.codigo} ×{p.total}
                       </span>
                     ))
                   )}
-                  {lotes.length > 4 && (
-                    <span className="text-xs text-gray-500">+{lotes.length - 4}</span>
+                  {aggregated.length > 4 && (
+                    <span className="text-xs text-gray-500">+{aggregated.length - 4}</span>
                   )}
                 </div>
                 <span className={`text-xs font-medium ${isSelected ? 'text-blue-600' : 'text-gray-500'}`}>

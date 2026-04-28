@@ -5,25 +5,25 @@ import {
   getAlmacenZonas, createAlmacenZona, updateAlmacenZona, deleteAlmacenZona,
   getUbicaciones, createUbicacion, updateUbicacion, deleteUbicacion,
   getAlmacenStock,
+  getEtiquetas, createEtiqueta, deleteEtiqueta, assignEtiqueta, unassignEtiqueta,
 } from '../api'
 
 // ── Data store: single source of truth for warehouse entities ─────────────────
-//
-// Components subscribe to slices via selectors. Optimistic updates mutate the
-// targeted entity in-place (immutable swap of the affected object only) so
-// unaffected entities keep stable references and Zustand bails out their renders.
 
 export const useDataStore = create((set, get) => ({
   zonas: [],
   ubicaciones: [],
   stock: { slots: {}, sin_ubicar: [] },
+  etiquetas: [],
   loading: true,
 
   loadAll: async () => {
     set({ loading: true })
     try {
-      const [zR, uR, sR] = await Promise.all([getAlmacenZonas(), getUbicaciones(), getAlmacenStock()])
-      set({ zonas: zR.data, ubicaciones: uR.data, stock: sR.data, loading: false })
+      const [zR, uR, sR, eR] = await Promise.all([
+        getAlmacenZonas(), getUbicaciones(), getAlmacenStock(), getEtiquetas(),
+      ])
+      set({ zonas: zR.data, ubicaciones: uR.data, stock: sR.data, etiquetas: eR.data, loading: false })
     } catch {
       toast.error('Error cargando el plano')
       set({ loading: false })
@@ -100,21 +100,60 @@ export const useDataStore = create((set, get) => ({
       toast.error(err.response?.data?.error ?? 'Error al eliminar ubicación')
     }
   },
+
+  // ── Etiquetas ──────────────────────────────────────────
+  addEtiqueta: async (payload) => {
+    try {
+      const r = await createEtiqueta(payload)
+      set((s) => ({ etiquetas: [...s.etiquetas, r.data] }))
+      return r.data
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al crear etiqueta')
+    }
+  },
+
+  removeEtiqueta: async (id) => {
+    try {
+      await deleteEtiqueta(id)
+      set((s) => ({ etiquetas: s.etiquetas.filter((e) => e.id !== id) }))
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al eliminar etiqueta')
+    }
+  },
+
+  assignEtiquetaToUbicacion: async (ubicacionId, etiquetaId) => {
+    try {
+      const r = await assignEtiqueta(ubicacionId, etiquetaId)
+      set((s) => ({ ubicaciones: s.ubicaciones.map((u) => u.id === ubicacionId ? r.data : u) }))
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al asignar etiqueta')
+    }
+  },
+
+  unassignEtiquetaFromUbicacion: async (ubicacionId, etiquetaId) => {
+    try {
+      const r = await unassignEtiqueta(ubicacionId, etiquetaId)
+      set((s) => ({ ubicaciones: s.ubicaciones.map((u) => u.id === ubicacionId ? r.data : u) }))
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al quitar etiqueta')
+    }
+  },
 }))
 
 // ── Canvas store: pure UI state (selection, mode, camera) ─────────────────────
-// Strict separation from data — re-rendering canvas chrome doesn't touch entities.
 
 export const useCanvasStore = create((set) => ({
   editMode: false,
   // selection: null | { type: 'zona'|'ubicacion', id, nivel? }
   selection: null,
+  gridSize: 25,
   setEditMode: (v) => set({ editMode: typeof v === 'function' ? v({ editMode: false }) : v }),
   toggleEditMode: () => set((s) => ({ editMode: !s.editMode, selection: null })),
   setSelection: (s) => set({ selection: s }),
   selectZona: (id) => set({ selection: { type: 'zona', id } }),
   selectUbicacion: (id, nivel = null) => set({ selection: { type: 'ubicacion', id, nivel } }),
   clearSelection: () => set({ selection: null }),
+  setGridSize: (n) => set({ gridSize: n }),
 }))
 
 // ── Selector helpers (memoized derived data) ──────────────────────────────────

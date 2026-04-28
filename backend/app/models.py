@@ -397,6 +397,10 @@ class Ubicacion(db.Model):
     def placed(self):
         return self.x is not None and self.y is not None
 
+    etiquetas_asignadas = db.relationship(
+        'Etiqueta', secondary='ubicacion_etiquetas', backref='ubicaciones', lazy='select'
+    )
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -409,7 +413,26 @@ class Ubicacion(db.Model):
             'width': self.width, 'height': self.height,
             'rotacion': self.rotacion,
             'placed': self.placed,
+            'etiquetas': [e.to_dict() for e in self.etiquetas_asignadas],
         }
+
+
+ubicacion_etiquetas = db.Table(
+    'ubicacion_etiquetas',
+    db.Column('ubicacion_id', db.Integer, db.ForeignKey('ubicaciones.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('etiqueta_id', db.Integer, db.ForeignKey('etiquetas.id', ondelete='CASCADE'), primary_key=True),
+)
+
+
+class Etiqueta(db.Model):
+    """Reusable label assignable to any Ubicacion."""
+    __tablename__ = 'etiquetas'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(50), nullable=False, unique=True)
+    color = db.Column(db.String(20), nullable=False, default='#E2E8F0')
+
+    def to_dict(self):
+        return {'id': self.id, 'nombre': self.nombre, 'color': self.color}
 
 
 class JornadaEquipo(db.Model):

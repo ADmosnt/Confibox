@@ -89,6 +89,14 @@ export const updateUbicacion = (id, data) => api.put(`/inventario/ubicaciones/${
 export const deleteUbicacion = (id) => api.delete(`/inventario/ubicaciones/${id}`)
 export const ubicarLote = (id, data) => api.put(`/inventario/lotes/${id}/ubicar`, data)
 export const getAlmacenStock = () => api.get('/inventario/almacen-stock')
+// Etiquetas (labels)
+export const getEtiquetas = () => api.get('/inventario/etiquetas')
+export const createEtiqueta = (data) => api.post('/inventario/etiquetas', data)
+export const deleteEtiqueta = (id) => api.delete(`/inventario/etiquetas/${id}`)
+export const assignEtiqueta = (ubicacionId, etiquetaId) =>
+  api.post(`/inventario/ubicaciones/${ubicacionId}/etiquetas`, { etiqueta_id: etiquetaId })
+export const unassignEtiqueta = (ubicacionId, etiquetaId) =>
+  api.delete(`/inventario/ubicaciones/${ubicacionId}/etiquetas/${etiquetaId}`)
 
 // ── Pedidos ────────────────────────────────────────────────────────────────
 export const getPedidos = (params) => api.get('/pedidos', { params })

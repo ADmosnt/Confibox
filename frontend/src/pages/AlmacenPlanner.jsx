@@ -3,14 +3,15 @@ import PlannerCanvas from '../components/planner/PlannerCanvas'
 import PlannerSidebar from '../components/planner/PlannerSidebar'
 import { useDataStore, useCanvasStore, useShallow } from '../stores/almacenStore'
 
-// Orchestrator: just composes layout. All state/data flows through Zustand
-// stores, components subscribe atomically — no prop drilling.
+const GRID_OPTIONS = [10, 25, 50]
 
 export default function AlmacenPlanner() {
   const loadAll = useDataStore((s) => s.loadAll)
   const loading = useDataStore((s) => s.loading)
   const editMode = useCanvasStore((s) => s.editMode)
   const toggleEditMode = useCanvasStore((s) => s.toggleEditMode)
+  const gridSize = useCanvasStore((s) => s.gridSize)
+  const setGridSize = useCanvasStore((s) => s.setGridSize)
   const counts = useDataStore(useShallow((s) => ({
     ubicaciones: s.ubicaciones.length,
     zonas: s.zonas.length,
@@ -28,7 +29,25 @@ export default function AlmacenPlanner() {
             {counts.ubicaciones} ubicaciones · {counts.zonas} zonas · {counts.sinUbicar} lotes sin ubicar
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {editMode && (
+            <div className="flex items-center gap-1.5 text-xs text-gray-600">
+              <span>Grid:</span>
+              {GRID_OPTIONS.map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setGridSize(g)}
+                  className={`px-2 py-1 rounded border transition-colors ${
+                    gridSize === g
+                      ? 'bg-gray-700 text-white border-gray-700'
+                      : 'bg-white border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {g}px
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={toggleEditMode}
             className={`text-sm px-3 py-1.5 rounded-lg border font-medium transition-colors ${
@@ -53,8 +72,8 @@ export default function AlmacenPlanner() {
             <PlannerCanvas />
             <p className="text-xs text-gray-400 mt-1.5">
               {editMode
-                ? 'Vista en planta · arrastra zonas y ubicaciones para moverlas'
-                : 'Vista en planta · click en una ubicación para ver su alzado y stock'}
+                ? 'Modo Diseño · arrastra para mover · rueda para zoom · R para rotar 90° · borde rojo = colisión'
+                : 'Modo Inventario · rueda para zoom · arrastra el fondo para navegar · click en ubicación para ver stock'}
             </p>
           </div>
           <PlannerSidebar />

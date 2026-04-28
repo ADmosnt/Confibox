@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 import datetime
 from sqlalchemy import func
 from app import db
-from app.models import Lote, Producto, AlmacenZona, Ubicacion
+from app.models import Lote, Producto, AlmacenZona, Ubicacion, Etiqueta
 from app.auth import require_role
 
 bp = Blueprint('inventario', __name__)
@@ -183,13 +183,13 @@ def create_ubicacion():
     if not data.get('codigo'):
         return jsonify({'error': 'codigo requerido'}), 400
     tipo = data.get('tipo', 'piso')
-    if tipo not in ('piso', 'rack'):
-        return jsonify({'error': "tipo debe ser 'piso' o 'rack'"}), 400
+    if tipo not in ('piso', 'rack', 'suelo'):
+        return jsonify({'error': "tipo debe ser 'piso', 'rack' o 'suelo'"}), 400
     niveles = int(data.get('niveles', 1))
     if niveles < 1:
         return jsonify({'error': 'niveles debe ser >= 1'}), 400
-    if tipo == 'piso' and niveles != 1:
-        return jsonify({'error': 'piso solo admite 1 nivel'}), 400
+    if tipo in ('piso', 'suelo'):
+        niveles = 1  # floor types are single-level
     if Ubicacion.query.filter_by(codigo=data['codigo']).first():
         return jsonify({'error': 'Ya existe una ubicación con ese código'}), 409
     u = Ubicacion(
@@ -212,8 +212,8 @@ def create_ubicacion():
 def update_ubicacion(id):
     u = Ubicacion.query.get_or_404(id)
     data = request.get_json() or {}
-    if 'tipo' in data and data['tipo'] not in ('piso', 'rack'):
-        return jsonify({'error': "tipo debe ser 'piso' o 'rack'"}), 400
+    if 'tipo' in data and data['tipo'] not in ('piso', 'rack', 'suelo'):
+        return jsonify({'error': "tipo debe ser 'piso', 'rack' o 'suelo'"}), 400
     # Block reducing niveles below the highest occupied nivel
     if 'niveles' in data:
         new_niveles = int(data['niveles'])
@@ -291,3 +291,59 @@ def almacen_stock():
         key = f"{lote.ubicacion_id}:{lote.nivel or 0}"
         by_slot.setdefault(key, []).append(lote.to_dict())
     return jsonify({'slots': by_slot, 'sin_ubicar': unassigned})
+
+
+# ── Etiquetas (reusable labels assignable to ubicaciones) ──────────────────────
+
+@bp.route('/etiquetas', methods=['GET'])
+@require_role(*ROLES_READ)
+def list_etiquetas():
+    return jsonify([e.to_dict() for e in Etiqueta.query.order_by(Etiqueta.nombre).all()])
+
+
+@bp.route('/etiquetas', methods=['POST'])
+@require_role(*ROLES_WRITE)
+def create_etiqueta():
+    data = request.get_json() or {}
+    if not data.get('nombre'):
+        return jsonify({'error': 'nombre requerido'}), 400
+    if Etiqueta.query.filter_by(nombre=data['nombre'].strip()).first():
+        return jsonify({'error': 'Ya existe una etiqueta con ese nombre'}), 409
+    e = Etiqueta(nombre=data['nombre'].strip(), color=data.get('color', '#E2E8F0'))
+    db.session.add(e)
+    db.session.commit()
+    return jsonify(e.to_dict()), 201
+
+
+@bp.route('/etiquetas/<int:id>', methods=['DELETE'])
+@require_role(*ROLES_WRITE)
+def delete_etiqueta(id):
+    e = Etiqueta.query.get_or_404(id)
+    db.session.delete(e)
+    db.session.commit()
+    return '', 204
+
+
+@bp.route('/ubicaciones/<int:id>/etiquetas', methods=['POST'])
+@require_role(*ROLES_WRITE)
+def assign_etiqueta(id):
+    u = Ubicacion.query.get_or_404(id)
+    etiqueta_id = (request.get_json() or {}).get('etiqueta_id')
+    if not etiqueta_id:
+        return jsonify({'error': 'etiqueta_id requerido'}), 400
+    e = Etiqueta.query.get_or_404(etiqueta_id)
+    if e not in u.etiquetas_asignadas:
+        u.etiquetas_asignadas.append(e)
+        db.session.commit()
+    return jsonify(u.to_dict())
+
+
+@bp.route('/ubicaciones/<int:id>/etiquetas/<int:eid>', methods=['DELETE'])
+@require_role(*ROLES_WRITE)
+def unassign_etiqueta(id, eid):
+    u = Ubicacion.query.get_or_404(id)
+    e = Etiqueta.query.get(eid)
+    if e and e in u.etiquetas_asignadas:
+        u.etiquetas_asignadas.remove(e)
+        db.session.commit()
+    return jsonify(u.to_dict())
