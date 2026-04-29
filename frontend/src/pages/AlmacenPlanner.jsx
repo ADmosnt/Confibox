@@ -1,9 +1,15 @@
+// Confibox/frontend/src/pages/AlmacenPlanner.jsx
 import { useEffect } from 'react'
 import PlannerCanvas from '../components/planner/PlannerCanvas'
 import PlannerSidebar from '../components/planner/PlannerSidebar'
 import { useDataStore, useCanvasStore, useShallow } from '../stores/almacenStore'
 
 const GRID_OPTIONS = [10, 25, 50]
+const VIEW_MODES = [
+  { key: 'normal',  label: '🎨 Normal',  hint: 'Colores por tipo' },
+  { key: 'heatmap', label: '🌡️ Ocupación', hint: 'Verde→Rojo según % de capacidad' },
+  { key: 'fefo',    label: '⏰ FEFO',    hint: 'Rojo = vence pronto' },
+]
 
 export default function AlmacenPlanner() {
   const loadAll = useDataStore((s) => s.loadAll)
@@ -12,6 +18,8 @@ export default function AlmacenPlanner() {
   const toggleEditMode = useCanvasStore((s) => s.toggleEditMode)
   const gridSize = useCanvasStore((s) => s.gridSize)
   const setGridSize = useCanvasStore((s) => s.setGridSize)
+  const viewMode = useCanvasStore((s) => s.viewMode)
+  const setViewMode = useCanvasStore((s) => s.setViewMode)
   const counts = useDataStore(useShallow((s) => ({
     ubicaciones: s.ubicaciones.length,
     zonas: s.zonas.length,
@@ -30,6 +38,23 @@ export default function AlmacenPlanner() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* View mode picker */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {VIEW_MODES.map((vm) => (
+              <button
+                key={vm.key}
+                onClick={() => setViewMode(vm.key)}
+                title={vm.hint}
+                className={`text-xs px-2.5 py-1 rounded transition-colors ${
+                  viewMode === vm.key
+                    ? 'bg-white text-gray-800 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-800'
+                }`}
+              >
+                {vm.label}
+              </button>
+            ))}
+          </div>
           {editMode && (
             <div className="flex items-center gap-1.5 text-xs text-gray-600">
               <span>Grid:</span>

@@ -1,3 +1,4 @@
+// Confibox/frontend/src/components/planner/PlannerSidebar.jsx
 import { memo, useState } from 'react'
 import { toast } from 'sonner'
 import { ubicarLote } from '../../api'
@@ -12,6 +13,12 @@ const COLORS = ['#DBEAFE', '#D1FAE5', '#FEF3C7', '#FCE7F3', '#EDE9FE', '#FFEDD5'
 const ETIQUETA_COLORS = ['#FEF3C7', '#D1FAE5', '#DBEAFE', '#FCE7F3', '#EDE9FE', '#FEE2E2', '#CFFAFE', '#F3F4F6']
 const inp = 'w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 const TIPO_LABEL = { rack: 'Estantería', piso: 'Paleta', suelo: 'Suelo' }
+const ESTADO_STYLE = {
+  disponible: { bg: 'bg-green-50',  text: 'text-green-700',  label: 'Disponible' },
+  bloqueado:  { bg: 'bg-gray-200',  text: 'text-gray-700',   label: 'Bloqueado' },
+  cuarentena: { bg: 'bg-orange-50', text: 'text-orange-700', label: 'Cuarentena' },
+  reservado:  { bg: 'bg-blue-50',   text: 'text-blue-700',   label: 'Reservado' },
+}
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +57,7 @@ function UbicacionForm() {
   const [tipo, setTipo] = useState('rack')
   const [niveles, setNiveles] = useState(4)
   const [zonaId, setZonaId] = useState('')
+  const [capacidad, setCapacidad] = useState('')
 
   const isFloor = tipo === 'piso' || tipo === 'suelo'
 
@@ -61,8 +69,9 @@ function UbicacionForm() {
       tipo,
       niveles: isFloor ? 1 : Number(niveles),
       zona_id: zonaId ? Number(zonaId) : null,
+      capacidad_max_bultos: capacidad ? Number(capacidad) : null,
     })
-    if (ok) { setCodigo(''); setNiveles(4) }
+    if (ok) { setCodigo(''); setNiveles(4); setCapacidad('') }
   }
 
   return (
@@ -84,6 +93,13 @@ function UbicacionForm() {
           className={`${inp} ${isFloor ? 'bg-gray-100' : ''}`}
         />
       </div>
+      <input
+        type="number" min={1}
+        value={capacidad}
+        onChange={(e) => setCapacidad(e.target.value)}
+        placeholder={tipo === 'rack' ? 'Capacidad por nivel (bultos)' : 'Capacidad máx (bultos)'}
+        className={inp}
+      />
       <select value={zonaId} onChange={(e) => setZonaId(e.target.value)} className={inp}>
         <option value="">Sin zona</option>
         {zonas.map((z) => <option key={z.id} value={z.id}>{z.nombre}</option>)}
@@ -91,7 +107,7 @@ function UbicacionForm() {
       <button type="submit" className="w-full bg-blue-600 text-white text-sm py-1.5 rounded hover:bg-blue-700">
         Crear ubicación
       </button>
-      <p className="text-xs text-gray-400">Después arrástrala al canvas para posicionarla.</p>
+      <p className="text-xs text-gray-400">Capacidad opcional · arrastra al canvas para posicionarla.</p>
     </form>
   )
 }
@@ -395,6 +411,7 @@ function InventarioPanel() {
   }))
   const patchUbicacion = useDataStore((s) => s.patchUbicacion)
   const refreshStock = useDataStore((s) => s.refreshStock)
+  const changeLoteEstado = useDataStore((s) => s.changeLoteEstado)
   const [asignando, setAsignando] = useState(false)
 
   const detachLote = async (lote) => {
@@ -461,6 +478,11 @@ function InventarioPanel() {
             {isRack ? `Estantería · ${ubicacion.niveles} niveles` : TIPO_LABEL[ubicacion.tipo]}
             {ubicacion.zona && ` · ${ubicacion.zona}`}
           </p>
+          {ubicacion.capacidad_max_bultos != null && (
+            <p className="text-xs text-gray-400">
+              Capacidad: {ubicacion.capacidad_max_bultos} bultos{isRack ? '/nivel' : ''}
+            </p>
+          )}
         </div>
         {editMode && (
           <button
@@ -498,29 +520,49 @@ function InventarioPanel() {
           <p className="text-xs text-gray-400">Sin lotes en este slot</p>
         ) : (
           <div className="space-y-1.5 max-h-60 overflow-y-auto">
-            {slotLotes.map((l) => (
-              <div key={l.id} className="text-xs flex items-start gap-2 group bg-gray-50 rounded p-1.5">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 truncate">{l.descripcion}</p>
-                  <p className="text-gray-500">
-                    {l.codigo} · {l.cantidad_bultos}b · {l.cantidad_unidades}u
-                    {l.fecha_vencimiento && (
-                      <span className={
-                        new Date(l.fecha_vencimiento) < new Date(Date.now() + 30 * 86400000)
-                          ? ' text-orange-500 ml-1' : ' text-gray-400 ml-1'
-                      }>
-                        vence {l.fecha_vencimiento}
+            {slotLotes.map((l) => {
+              const estado = l.estado ?? 'disponible'
+              const est = ESTADO_STYLE[estado] ?? ESTADO_STYLE.disponible
+              return (
+                <div key={l.id} className="text-xs flex items-start gap-2 group bg-gray-50 rounded p-1.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="font-medium text-gray-800 truncate">{l.descripcion}</p>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${est.bg} ${est.text} font-medium`}>
+                        {est.label}
                       </span>
-                    )}
-                  </p>
+                    </div>
+                    <p className="text-gray-500">
+                      {l.codigo} · {l.cantidad_bultos}b · {l.cantidad_unidades}u
+                      {l.fecha_vencimiento && (
+                        <span className={
+                          new Date(l.fecha_vencimiento) < new Date(Date.now() + 30 * 86400000)
+                            ? ' text-orange-500 ml-1' : ' text-gray-400 ml-1'
+                        }>
+                          vence {l.fecha_vencimiento}
+                        </span>
+                      )}
+                    </p>
+                    <select
+                      value={estado}
+                      onChange={(e) => { if (e.target.value !== estado) changeLoteEstado(l.id, e.target.value) }}
+                      className="mt-1 text-[10px] border border-gray-200 rounded px-1 py-0.5 bg-white text-gray-600"
+                      title="Cambiar estado del lote"
+                    >
+                      <option value="disponible">Disponible</option>
+                      <option value="bloqueado">Bloqueado</option>
+                      <option value="cuarentena">Cuarentena</option>
+                      <option value="reservado">Reservado</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={() => detachLote(l)}
+                    className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
+                    title="Quitar de este slot"
+                  >×</button>
                 </div>
-                <button
-                  onClick={() => detachLote(l)}
-                  className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
-                  title="Quitar de este slot"
-                >×</button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

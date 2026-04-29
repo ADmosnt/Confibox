@@ -97,6 +97,9 @@ export const assignEtiqueta = (ubicacionId, etiquetaId) =>
   api.post(`/inventario/ubicaciones/${ubicacionId}/etiquetas`, { etiqueta_id: etiquetaId })
 export const unassignEtiqueta = (ubicacionId, etiquetaId) =>
   api.delete(`/inventario/ubicaciones/${ubicacionId}/etiquetas/${etiquetaId}`)
+// Lote estado + audit log
+export const cambiarEstadoLote = (id, estado) => api.put(`/inventario/lotes/${id}/estado`, { estado })
+export const getMovimientosLote = (params) => api.get('/inventario/movimientos-lote', { params })
 
 // ── Pedidos ────────────────────────────────────────────────────────────────
 export const getPedidos = (params) => api.get('/pedidos', { params })

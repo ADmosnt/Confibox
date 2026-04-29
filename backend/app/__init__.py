@@ -192,6 +192,14 @@ def _run_migrations():
             "ALTER TABLE lotes ADD COLUMN IF NOT EXISTS nivel INTEGER"
         ))
 
+        # WMS v2.5 — capacity, lote estado, movimientos audit log
+        conn.execute(text(
+            "ALTER TABLE ubicaciones ADD COLUMN IF NOT EXISTS capacidad_max_bultos INTEGER"
+        ))
+        conn.execute(text(
+            "ALTER TABLE lotes ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'disponible'"
+        ))
+
         # Sequence for pedido numbers — replaces SELECT MAX() to eliminate race conditions
         conn.execute(text(
             "CREATE SEQUENCE IF NOT EXISTS seq_pedido_numero MINVALUE 1 START 1"

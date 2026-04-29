@@ -1,3 +1,4 @@
+// Confibox/frontend/src/components/planner/PlannerCanvas.jsx
 import { useEffect, useRef } from 'react'
 import { Stage, Layer } from 'react-konva'
 import { toast } from 'sonner'

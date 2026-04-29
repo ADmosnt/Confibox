@@ -2,8 +2,8 @@ from flask import Blueprint, jsonify, request
 import datetime
 from sqlalchemy import func
 from app import db
-from app.models import Lote, Producto, AlmacenZona, Ubicacion, Etiqueta
-from app.auth import require_role
+from app.models import Lote, Producto, AlmacenZona, Ubicacion, Etiqueta, MovimientoLote
+from app.auth import require_role, get_current_user
 
 bp = Blueprint('inventario', __name__)
 
@@ -84,31 +84,26 @@ def update_lote(id):
 @bp.route('/stock', methods=['GET'])
 @require_role(*ROLES_READ)
 def get_stock_consolidado():
-    """Stock total por producto sumando todos los lotes con bultos > 0."""
+    """Stock total por producto. Single JOIN — no N+1."""
     rows = (
-        db.session.query(
-            Lote.producto_id,
-            func.sum(Lote.cantidad_bultos).label('total_bultos'),
-        )
+        db.session.query(Producto, func.sum(Lote.cantidad_bultos).label('total'))
+        .join(Lote, Lote.producto_id == Producto.id)
         .filter(Lote.cantidad_bultos > 0)
-        .group_by(Lote.producto_id)
+        .group_by(Producto.id)
+        .order_by(Producto.descripcion)
         .all()
     )
-    result = []
-    for r in rows:
-        p = Producto.query.get(r.producto_id)
-        if not p:
-            continue
-        result.append({
-            'producto_id': r.producto_id,
+    return jsonify([
+        {
+            'producto_id': p.id,
             'codigo': p.codigo,
             'descripcion': p.descripcion,
             'unidades_por_bulto': p.unidades_por_bulto,
-            'total_bultos': int(r.total_bultos),
-            'total_unidades': int(r.total_bultos) * p.unidades_por_bulto,
-        })
-    result.sort(key=lambda x: x['descripcion'])
-    return jsonify(result)
+            'total_bultos': int(total),
+            'total_unidades': int(total) * p.unidades_por_bulto,
+        }
+        for p, total in rows
+    ])
 
 
 # ── WMS Planner: Zonas (logical map regions) ───────────────────────────────────
@@ -201,6 +196,7 @@ def create_ubicacion():
         width=int(data.get('width', 80)),
         height=int(data.get('height', 60 if tipo == 'piso' else 100)),
         rotacion=int(data.get('rotacion', 0)),
+        capacidad_max_bultos=data.get('capacidad_max_bultos'),
     )
     db.session.add(u)
     db.session.commit()
@@ -226,7 +222,7 @@ def update_ubicacion(id):
             return jsonify({
                 'error': f'No se puede reducir a {new_niveles} niveles: hay stock en el nivel {max_in_use}.'
             }), 409
-    for field in ('codigo', 'zona_id', 'tipo', 'niveles', 'x', 'y', 'width', 'height', 'rotacion'):
+    for field in ('codigo', 'zona_id', 'tipo', 'niveles', 'x', 'y', 'width', 'height', 'rotacion', 'capacidad_max_bultos'):
         if field in data:
             setattr(u, field, data[field])
     db.session.commit()
@@ -250,16 +246,35 @@ def delete_ubicacion(id):
 @bp.route('/lotes/<int:id>/ubicar', methods=['PUT'])
 @require_role(*ROLES_WRITE)
 def ubicar_lote(id):
-    """Assign a lote to (ubicacion, nivel). Validates nivel is within range."""
+    """Assign a lote to (ubicacion, nivel). Validates nivel range + capacity.
+    Logs every move to MovimientoLote inside an atomic SAVEPOINT so the lote
+    update and audit row commit together or not at all."""
     lote = Lote.query.get_or_404(id)
     data = request.get_json() or {}
+    user = get_current_user()
+    orig_ubic_id, orig_nivel = lote.ubicacion_id, lote.nivel
     ubicacion_id = data.get('ubicacion_id')
+
+    # Detach (no destination)
     if ubicacion_id is None:
-        # Detach
-        lote.ubicacion_id = None
-        lote.nivel = None
-        db.session.commit()
+        if orig_ubic_id is None:
+            return jsonify(lote.to_dict())  # nothing to do
+        try:
+            with db.session.begin_nested():
+                lote.ubicacion_id = None
+                lote.nivel = None
+                db.session.add(MovimientoLote(
+                    lote_id=id,
+                    ubicacion_origen_id=orig_ubic_id, nivel_origen=orig_nivel,
+                    ubicacion_destino_id=None, nivel_destino=None,
+                    usuario_id=user.id if user else None, accion='retirar',
+                ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            raise
         return jsonify(lote.to_dict())
+
     u = Ubicacion.query.get_or_404(ubicacion_id)
     nivel = data.get('nivel')
     if u.tipo == 'rack':
@@ -270,10 +285,89 @@ def ubicar_lote(id):
             return jsonify({'error': f'nivel fuera de rango (1..{u.niveles})'}), 400
     else:
         nivel = None
-    lote.ubicacion_id = u.id
-    lote.nivel = nivel
-    db.session.commit()
+
+    # Capacity check (per-slot for racks, per-ubicacion for piso/suelo)
+    if u.capacidad_max_bultos is not None:
+        nivel_filter = (Lote.nivel == nivel) if nivel is not None else (Lote.nivel.is_(None))
+        existing_total = (
+            db.session.query(func.sum(Lote.cantidad_bultos))
+            .filter(
+                Lote.ubicacion_id == u.id,
+                nivel_filter,
+                Lote.id != lote.id,
+                Lote.cantidad_bultos > 0,
+            )
+            .scalar() or 0
+        )
+        if existing_total + lote.cantidad_bultos > u.capacidad_max_bultos:
+            return jsonify({
+                'error': (
+                    f'Capacidad excedida en {u.codigo}'
+                    + (f' N{nivel}' if nivel else '')
+                    + f': {existing_total + lote.cantidad_bultos}/{u.capacidad_max_bultos} bultos'
+                )
+            }), 409
+
+    accion = 'mover' if orig_ubic_id else 'ubicar'
+    try:
+        with db.session.begin_nested():
+            lote.ubicacion_id = u.id
+            lote.nivel = nivel
+            db.session.add(MovimientoLote(
+                lote_id=id,
+                ubicacion_origen_id=orig_ubic_id, nivel_origen=orig_nivel,
+                ubicacion_destino_id=u.id, nivel_destino=nivel,
+                usuario_id=user.id if user else None, accion=accion,
+            ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return jsonify(lote.to_dict())
+
+
+@bp.route('/lotes/<int:id>/estado', methods=['PUT'])
+@require_role(*ROLES_WRITE)
+def cambiar_estado_lote(id):
+    """Change a lote's estado (disponible/bloqueado/cuarentena/reservado)."""
+    lote = Lote.query.get_or_404(id)
+    data = request.get_json() or {}
+    nuevo = data.get('estado')
+    if nuevo not in ('disponible', 'bloqueado', 'cuarentena', 'reservado'):
+        return jsonify({'error': 'estado inválido'}), 400
+    if nuevo == lote.estado:
+        return jsonify(lote.to_dict())
+    user = get_current_user()
+    anterior = lote.estado
+    try:
+        with db.session.begin_nested():
+            lote.estado = nuevo
+            db.session.add(MovimientoLote(
+                lote_id=id,
+                ubicacion_origen_id=lote.ubicacion_id, nivel_origen=lote.nivel,
+                ubicacion_destino_id=lote.ubicacion_id, nivel_destino=lote.nivel,
+                usuario_id=user.id if user else None,
+                accion='cambio_estado',
+                detalle=f'estado: {anterior} → {nuevo}',
+            ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return jsonify(lote.to_dict())
+
+
+@bp.route('/movimientos-lote', methods=['GET'])
+@require_role(*ROLES_READ)
+def list_movimientos():
+    """Audit log: most recent movements first (limited)."""
+    limit = min(int(request.args.get('limit', 100)), 500)
+    lote_id = request.args.get('lote_id')
+    q = MovimientoLote.query
+    if lote_id:
+        q = q.filter(MovimientoLote.lote_id == int(lote_id))
+    movs = q.order_by(MovimientoLote.creado_en.desc()).limit(limit).all()
+    return jsonify([m.to_dict() for m in movs])
 
 
 @bp.route('/almacen-stock', methods=['GET'])

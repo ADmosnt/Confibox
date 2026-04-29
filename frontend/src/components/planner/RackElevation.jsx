@@ -1,3 +1,4 @@
+// Confibox/frontend/src/components/planner/RackElevation.jsx
 import { memo } from 'react'
 import { useDataStore, useCanvasStore } from '../../stores/almacenStore'
 

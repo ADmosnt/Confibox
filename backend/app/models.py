@@ -159,6 +159,8 @@ class Lote(db.Model):
     nivel = db.Column(db.Integer)                   # 1..N for racks; NULL for piso
     fecha_ingreso = db.Column(db.Date, nullable=False, default=datetime.date.today)
     nota = db.Column(db.Text)
+    # disponible | bloqueado | cuarentena | reservado
+    estado = db.Column(db.String(20), nullable=False, default='disponible')
     creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
 
     producto = db.relationship('Producto', backref='lotes')
@@ -189,6 +191,7 @@ class Lote(db.Model):
             'nivel': self.nivel,
             'fecha_ingreso': self.fecha_ingreso.isoformat(),
             'nota': self.nota,
+            'estado': self.estado,
         }
 
 
@@ -389,6 +392,8 @@ class Ubicacion(db.Model):
     width = db.Column(db.Integer, default=80)
     height = db.Column(db.Integer, default=60)
     rotacion = db.Column(db.Integer, default=0)
+    # NULL = sin límite. Para racks aplica POR NIVEL; para piso/suelo aplica al slot único.
+    capacidad_max_bultos = db.Column(db.Integer)
     creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
 
     zona = db.relationship('AlmacenZona', backref='ubicaciones')
@@ -413,6 +418,7 @@ class Ubicacion(db.Model):
             'width': self.width, 'height': self.height,
             'rotacion': self.rotacion,
             'placed': self.placed,
+            'capacidad_max_bultos': self.capacidad_max_bultos,
             'etiquetas': [e.to_dict() for e in self.etiquetas_asignadas],
         }
 
@@ -433,6 +439,45 @@ class Etiqueta(db.Model):
 
     def to_dict(self):
         return {'id': self.id, 'nombre': self.nombre, 'color': self.color}
+
+
+class MovimientoLote(db.Model):
+    """Audit log: every relocation of a lote leaves an immutable record."""
+    __tablename__ = 'movimientos_lote'
+    id = db.Column(db.Integer, primary_key=True)
+    lote_id = db.Column(db.Integer, db.ForeignKey('lotes.id'), nullable=False)
+    ubicacion_origen_id = db.Column(db.Integer, db.ForeignKey('ubicaciones.id'))
+    nivel_origen = db.Column(db.Integer)
+    ubicacion_destino_id = db.Column(db.Integer, db.ForeignKey('ubicaciones.id'))
+    nivel_destino = db.Column(db.Integer)
+    usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'))
+    # ubicar | mover | retirar | cambio_estado
+    accion = db.Column(db.String(20), nullable=False)
+    detalle = db.Column(db.String(200))
+    creado_en = db.Column(db.DateTime(timezone=True), default=datetime.datetime.utcnow)
+
+    lote = db.relationship('Lote', foreign_keys=[lote_id])
+    origen = db.relationship('Ubicacion', foreign_keys=[ubicacion_origen_id])
+    destino = db.relationship('Ubicacion', foreign_keys=[ubicacion_destino_id])
+    usuario = db.relationship('Usuario', foreign_keys=[usuario_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'lote_id': self.lote_id,
+            'lote_codigo': self.lote.producto.codigo if self.lote and self.lote.producto else None,
+            'ubicacion_origen_id': self.ubicacion_origen_id,
+            'origen_codigo': self.origen.codigo if self.origen else None,
+            'nivel_origen': self.nivel_origen,
+            'ubicacion_destino_id': self.ubicacion_destino_id,
+            'destino_codigo': self.destino.codigo if self.destino else None,
+            'nivel_destino': self.nivel_destino,
+            'usuario_id': self.usuario_id,
+            'usuario': self.usuario.username if self.usuario else None,
+            'accion': self.accion,
+            'detalle': self.detalle,
+            'creado_en': self.creado_en.isoformat() if self.creado_en else None,
+        }
 
 
 class JornadaEquipo(db.Model):

@@ -6,6 +6,7 @@ import {
   getUbicaciones, createUbicacion, updateUbicacion, deleteUbicacion,
   getAlmacenStock,
   getEtiquetas, createEtiqueta, deleteEtiqueta, assignEtiqueta, unassignEtiqueta,
+  cambiarEstadoLote,
 } from '../api'
 
 // ── Data store: single source of truth for warehouse entities ─────────────────
@@ -138,6 +139,30 @@ export const useDataStore = create((set, get) => ({
       toast.error(err.response?.data?.error ?? 'Error al quitar etiqueta')
     }
   },
+
+  // ── Lote estado ────────────────────────────────────────
+  changeLoteEstado: async (loteId, nuevoEstado) => {
+    try {
+      const r = await cambiarEstadoLote(loteId, nuevoEstado)
+      // Update lote in stock.slots and sin_ubicar
+      set((s) => {
+        const updateInList = (list) => list.map((l) => l.id === loteId ? r.data : l)
+        const newSlots = {}
+        for (const [k, lotes] of Object.entries(s.stock.slots)) {
+          newSlots[k] = updateInList(lotes)
+        }
+        return {
+          stock: {
+            slots: newSlots,
+            sin_ubicar: updateInList(s.stock.sin_ubicar),
+          },
+        }
+      })
+      toast.success(`Estado: ${nuevoEstado}`)
+    } catch (err) {
+      toast.error(err.response?.data?.error ?? 'Error al cambiar estado')
+    }
+  },
 }))
 
 // ── Canvas store: pure UI state (selection, mode, camera) ─────────────────────
@@ -147,6 +172,8 @@ export const useCanvasStore = create((set) => ({
   // selection: null | { type: 'zona'|'ubicacion', id, nivel? }
   selection: null,
   gridSize: 25,
+  // 'normal' | 'heatmap' (occupation %) | 'fefo' (expiry urgency)
+  viewMode: 'normal',
   setEditMode: (v) => set({ editMode: typeof v === 'function' ? v({ editMode: false }) : v }),
   toggleEditMode: () => set((s) => ({ editMode: !s.editMode, selection: null })),
   setSelection: (s) => set({ selection: s }),
@@ -154,6 +181,7 @@ export const useCanvasStore = create((set) => ({
   selectUbicacion: (id, nivel = null) => set({ selection: { type: 'ubicacion', id, nivel } }),
   clearSelection: () => set({ selection: null }),
   setGridSize: (n) => set({ gridSize: n }),
+  setViewMode: (m) => set({ viewMode: m }),
 }))
 
 // ── Selector helpers (memoized derived data) ──────────────────────────────────

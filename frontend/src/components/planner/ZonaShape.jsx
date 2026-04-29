@@ -1,3 +1,4 @@
+// Confibox/frontend/src/components/planner/ZonaShape.jsx
 import { memo, useEffect, useRef } from 'react'
 import { Group, Rect, Text, Transformer } from 'react-konva'
 import { useDataStore, useCanvasStore } from '../../stores/almacenStore'

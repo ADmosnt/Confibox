@@ -1,3 +1,4 @@
+// Confibox/frontend/src/components/planner/UbicacionShape.jsx
 import { memo, useEffect, useRef, useState } from 'react'
 import { Group, Rect, Text, Transformer, Line } from 'react-konva'
 import { toast } from 'sonner'
@@ -13,22 +14,61 @@ const THEME = {
   suelo: { fill: '#BBF7D0', stroke: '#15803D' },   // green  — suelo
 }
 
+// Heatmap gradient: green → yellow → orange → red as occupation grows.
+function heatmapColor(pct) {
+  if (pct == null) return '#E5E7EB'      // gray = no capacity defined
+  const p = Math.min(1, Math.max(0, pct))
+  if (p < 0.3) return '#86EFAC'           // green
+  if (p < 0.6) return '#FDE047'           // yellow
+  if (p < 0.85) return '#FB923C'          // orange
+  return '#EF4444'                        // red (≥85%)
+}
+
+// FEFO gradient: by days until earliest expiry.
+function fefoColor(days) {
+  if (days == null) return '#E5E7EB'      // gray = no stock or no expiry tracked
+  if (days < 0) return '#7F1D1D'          // dark red — already expired
+  if (days < 7) return '#EF4444'          // red — critical
+  if (days < 30) return '#FB923C'         // orange — soon
+  if (days < 60) return '#FDE047'         // yellow — watch
+  return '#86EFAC'                        // green — fine
+}
+
 function UbicacionShape({ id }) {
   const ubicacion = useDataStore((s) => s.ubicaciones.find((u) => u.id === id))
-  const totalLotes = useDataStore((s) => {
-    if (!ubicacion) return 0
-    let n = 0
+
+  // Aggregate stock metrics for heatmap + FEFO. We compute these via selectors
+  // so each shape only re-renders when its own slots change.
+  const stockStats = useDataStore((s) => {
+    if (!ubicacion) return { totalLotes: 0, totalBultos: 0, minVencDays: null }
+    let totalLotes = 0
+    let totalBultos = 0
+    let minVencTs = null
+    const today = Date.now()
+    const collect = (lotes) => {
+      lotes.forEach((l) => {
+        totalLotes += 1
+        totalBultos += l.cantidad_bultos ?? 0
+        if (l.fecha_vencimiento) {
+          const ts = new Date(l.fecha_vencimiento).getTime()
+          if (minVencTs == null || ts < minVencTs) minVencTs = ts
+        }
+      })
+    }
     if (ubicacion.tipo === 'rack') {
       for (let nivel = 1; nivel <= ubicacion.niveles; nivel++) {
-        n += (s.stock.slots[`${id}:${nivel}`] ?? []).length
+        collect(s.stock.slots[`${id}:${nivel}`] ?? [])
       }
     } else {
-      n = (s.stock.slots[`${id}:0`] ?? []).length
+      collect(s.stock.slots[`${id}:0`] ?? [])
     }
-    return n
+    const minVencDays = minVencTs != null ? Math.floor((minVencTs - today) / 86400000) : null
+    return { totalLotes, totalBultos, minVencDays }
   })
+  const totalLotes = stockStats.totalLotes
   const selected = useCanvasStore((s) => s.selection?.type === 'ubicacion' && s.selection.id === id)
   const editMode = useCanvasStore((s) => s.editMode)
+  const viewMode = useCanvasStore((s) => s.viewMode)
   const select = useCanvasStore((s) => s.selectUbicacion)
   const patchUbicacion = useDataStore((s) => s.patchUbicacion)
 
@@ -49,6 +89,22 @@ function UbicacionShape({ id }) {
   const h = ubicacion.height
   const rot = ubicacion.rotacion ?? 0
   const theme = THEME[ubicacion.tipo] ?? THEME.piso
+
+  // Pick fill based on the active view mode.
+  let fill = theme.fill
+  if (viewMode === 'heatmap') {
+    const cap = ubicacion.capacidad_max_bultos
+    // For racks, capacity is per-nivel; for piso/suelo, it's the slot total.
+    // Use total bultos / (cap × niveles_efectivos) so a half-full rack reads ~50%.
+    const capTotal = cap != null
+      ? cap * (ubicacion.tipo === 'rack' ? ubicacion.niveles : 1)
+      : null
+    const pct = capTotal ? stockStats.totalBultos / capTotal : null
+    fill = heatmapColor(pct)
+  } else if (viewMode === 'fefo') {
+    fill = fefoColor(stockStats.minVencDays)
+  }
+
   const strokeColor = isColliding ? '#DC2626' : (selected ? '#2563EB' : theme.stroke)
   const gridSize = useCanvasStore.getState().gridSize ?? 25
   const snapG = (n) => Math.round(n / gridSize) * gridSize
@@ -122,7 +178,7 @@ function UbicacionShape({ id }) {
           ref={rectRef}
           width={w}
           height={h}
-          fill={theme.fill}
+          fill={fill}
           stroke={strokeColor}
           strokeWidth={selected || isColliding ? 2.5 : 1.5}
           cornerRadius={3}
